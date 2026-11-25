@@ -401,18 +401,22 @@ describe('a PM’s questions on Telegram', () => {
     const setting = { enabled: true };
     const delivered: string[] = [];
     const session = { id: PM, name: 'Chef', cwd: '/work/pilou', state: 'wait', stateSince: 0, permissions: [], pm: true } as unknown as SessionInfo;
+    // the sessions open: the PM until a test forgets it
+    const office = [session];
+    // the PMs whose file was asked for
+    const reads: string[] = [];
     const book = new PmBook(mkdtempSync(path.join(base, 'pm-')));
     await book.change(PM, (plan) => { addAsk(plan, { title: 'Which phone?', detail: '', answers: ['iPhone', 'Android'], recommended: 'Android' }, 100); });
     const desk = new PmDesk({
-      book, sessions: () => [session], enabled: () => setting.enabled, now: Date.now, republish: () => {}, deliver: (_pm, text) => { delivered.push(text); },
+      book, sessions: () => office, enabled: () => setting.enabled, now: Date.now, republish: () => {}, deliver: (_pm, text) => { delivered.push(text); },
     });
     const deps: MessengersDeps = {
       file: path.join(base, file), api: fake.api,
-      sessions: () => [session], events: () => [], lastWords: () => '', triggers: () => [],
+      sessions: () => office, events: () => [], lastWords: () => '', triggers: () => [],
       answer: () => {}, reply: () => {}, send: () => {}, interrupt: () => {}, remote: () => {}, fire: async () => { throw new Error('unused'); },
       startSession: async () => session, folders: () => ['/work/pilou'], saveUpload: (name) => name, attachment: () => null,
       agent: async () => ({ text: '', conversation: null }), giveSecrets: () => [], onChange: () => {}, log: () => {},
-      pm: { enabled: () => setting.enabled, file: (pm) => book.cached(pm), answer: (pm, ask, answer) => desk.answer(pm, ask, answer) },
+      pm: { enabled: () => setting.enabled, file: (pm) => { reads.push(pm); return book.cached(pm); }, answer: (pm, ask, answer) => desk.answer(pm, ask, answer) },
     };
     const messengers = new Messengers(deps);
     messengers.save(undefined, { name: 'Phone', token: TOKEN, allSessions: true, model: '' });
@@ -427,7 +431,7 @@ describe('a PM’s questions on Telegram', () => {
       fake.push({ callback_query: { id, data: button.callback_data, message: { message_id: message.id!, chat: { id: 42 } } } });
     };
     const settled = () => fake.sent('editMessageText').filter((each) => each.body.message_id === asked()[0]?.id);
-    return { fake, setting, delivered, session, book, desk, deps, messengers, asked, buttons, tap, settled };
+    return { fake, setting, delivered, session, office, reads, book, desk, deps, messengers, asked, buttons, tap, settled };
   }
 
   it('sends each open question once, its answers as buttons with the recommended one set apart, and nothing while the setting is off', async () => {
@@ -482,6 +486,22 @@ describe('a PM’s questions on Telegram', () => {
       tap('iPhone');
       await until(() => fake.sent('answerCallbackQuery').length === 1);
       assert.deepEqual(delivered, ['Q1: Android']);
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('settles the message of a forgotten PM’s question without asking for the file that went with it', async () => {
+    const { office, reads, book, messengers, settled } = await pmOffice('pm-forgotten.json');
+    try {
+      await messengers.tick();
+      office.length = 0;
+      await book.remove(PM);
+      reads.length = 0;
+      await messengers.tick();
+      assert.equal(settled().length, 1, 'its message says it is settled');
+      // the server reads a file not at hand, and would keep an empty one for a PM that is gone
+      assert.deepEqual(reads, [], 'its file is not asked for');
     } finally {
       messengers.stop();
     }

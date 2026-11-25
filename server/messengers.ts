@@ -591,7 +591,9 @@ export class Messengers {
   /** How a PM question was settled, as its message ends. */
   private pmOutcome(key: string): string {
     const { pm, no } = pmOfKey(key);
-    const ask = this.deps.pm.file(pm)?.asks.find((one) => one.no === no);
+    // a PM forgotten took its file with it: never read again (it would come back empty)
+    const gone = !this.deps.sessions().some((one) => one.id === pm);
+    const ask = gone ? undefined : this.deps.pm.file(pm)?.asks.find((one) => one.no === no);
     return ask?.state === 'answered' && ask.answer ? st.messengers.answered(ask.answer) : st.messengers.askSettled;
   }
 
