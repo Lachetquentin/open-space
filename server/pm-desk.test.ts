@@ -206,10 +206,10 @@ describe('a question snoozed from the page', () => {
 });
 
 describe('a live page of a PM', () => {
-  /** The office, with page a1 shown about Q1, its HTML kept. */
+  /** The office, with page a1 shown (no question of its own), its HTML kept. */
   async function withPage() {
     const at = await office();
-    await at.book.change(PM, (file) => { showPage(file, { id: 'a1', title: 'Phone', source: 'phone', questions: ['Q1'] }, 100); });
+    await at.book.change(PM, (file) => { showPage(file, { id: 'a1', title: 'Phone', source: 'phone' }, 100); });
     await at.book.pages.write(PM, 'a1', '<input name="phone">');
     return at;
   }

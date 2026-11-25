@@ -325,6 +325,23 @@ describe('PM pages', () => {
     assert.ok(isError(retirePage(file, 'b2', 5)), 'already retired');
     assert.ok(isError(answerPage(file, 'zz', {}, 4)), 'unknown');
   });
+
+  it('opens again only a page no newer page of its source has followed, so that one page of a source at most is open', () => {
+    const file = emptyPm();
+    showPage(file, page('a1', 'layout'), 1);
+    answerPage(file, 'a1', { layout: 'A' }, 2);
+    showPage(file, page('b2', 'layout'), 3);
+    assert.ok(isError(reopenPage(file, 'a1')));
+    assert.equal(file.pages[0].state, 'answered');
+  });
+
+  it('is seen without an answer only when it asks no question', () => {
+    const file = emptyPm();
+    addAsk(file, { title: 'Which phone?', detail: '' }, 1);
+    showPage(file, { ...page('a1'), questions: ['Q1'] }, 1);
+    assert.ok(isError(seePage(file, 'a1', 2)));
+    assert.equal(file.pages[0].state, 'open');
+  });
 });
 
 describe('a PM file after every operation', () => {

@@ -363,19 +363,25 @@ export function answerPage(file: PmFile, id: string, answers: unknown, now: numb
   return page;
 }
 
-/** The user saw an open page and has nothing to answer. */
+/** The user saw an open page that asks no question, and has nothing to answer. */
 export function seePage(file: PmFile, id: string, now: number): PmPage | Err {
   const page = openPage(file, id);
   if ('error' in page) return page;
+  if (page.questions.length) return fail(st.pm.pageAsks(id, page.questions.join(' ')));
   Object.assign(page, { state: 'seen', settledAt: now });
   return page;
 }
 
-/** A page answered or seen open again, for the user to answer anew; its last answers stay until then. */
+/**
+ * A page answered or seen open again, for the user to answer anew; its last answers stay until then. Not once a newer
+ * page of its source followed it: that one is what the PM shows now.
+ */
 export function reopenPage(file: PmFile, id: string): PmPage | Err {
   const page = findPage(file, id);
   if (!page) return fail(st.pm.noPage(id));
   if (page.state !== 'answered' && page.state !== 'seen') return fail(st.pm.pageNotSettled(id));
+  const newer = file.pages.slice(file.pages.indexOf(page) + 1).find((one) => one.source === page.source);
+  if (newer) return fail(st.pm.pageFollowed(id, newer.id));
   page.state = 'open';
   delete page.settledAt;
   return page;
