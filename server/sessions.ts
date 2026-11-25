@@ -19,7 +19,7 @@ import type { KeyConsent, SecretStore } from './secrets.ts';
 import type { KeysCard, SecretEntry } from '../shared/secrets.ts';
 import type { ShellRunner } from './shell.ts';
 import { findMentions, isNamedBy, mentionNames } from '../shared/mentions.ts';
-import type { AccountsBrowser, Aside, BranchRow, CleanedBranch, FolderCode, FolderRepo, GitPending, InspectView, McpAction, MergeProblem, PendingItem, SessionChanges, WorktreeInfo } from '../shared/protocol.ts';
+import type { AccountsBrowser, Aside, AttentionKind, BranchRow, CleanedBranch, FolderCode, FolderRepo, GitPending, InspectView, McpAction, MergeProblem, PendingItem, SessionChanges, WorktreeInfo } from '../shared/protocol.ts';
 import type { AsideRunner } from './aside.ts';
 import type { Tagger } from './auto-tag.ts';
 import type { CatalogProbe, LaunchOptions, ProcessFactory } from './claude-process.ts';
@@ -30,6 +30,7 @@ import { st } from './i18n/index.ts';
 import { asArray, asJson, asNumber, asString, isJson } from './json.ts';
 import { MAX_NAME } from './messages.ts';
 import { storedTags } from '../shared/tags.ts';
+import { parsePmTag, type PmMessageTag, SESSION_ID } from '../shared/pm.ts';
 import { cleanPending, MAX_DISMISSED } from '../shared/pending.ts';
 import { readGitPending } from './pending-git.ts';
 import { pickSessionName } from './names.ts';
@@ -80,6 +81,8 @@ export interface SessionManagerDeps {
   hidden?: SessionDeps['hidden'];
   /** Preferences.promptSuggestions */
   promptSuggestions?: SessionDeps['promptSuggestions'];
+  /** Preferences.pm.enabled */
+  pmEnabled?: SessionDeps['pmEnabled'];
   /** asks a side question (/btw); null when Claude Code is not installed */
   askAside?: AsideRunner | null;
   /** names a new session's subject from its first message (Preferences.autoTag); null when Claude Code is not installed */
@@ -152,6 +155,15 @@ export class SessionManager {
   private switchingBrowsers = new Set<string>();
   /** the sessions switch_browser switches: they go on by themselves once relaunched (see switchBrowserOnRequest) */
   private browserRequests = new Map<string, AccountsBrowser>();
+  /** sessions made a PM or an ordinary session again whose process waits for the end of a turn to be released (setPm) */
+  private changingRole = new Set<string>();
+  /** who else hears of turn ends, attention and pauses (onSessionTurnEnd, onSessionAttention, onSessionPaused) */
+  private turnEndListeners: ((session: SessionInfo, how: TurnEnd) => void)[] = [];
+  private attentionListeners: ((kind: AttentionKind, session: SessionInfo) => void)[] = [];
+  private pausedListeners: ((session: SessionInfo) => void)[] = [];
+  private forgottenListeners: ((session: SessionInfo) => void)[] = [];
+  /** the sessions the usage limit pauses: a pause moved later is not a new one (onSessionPaused) */
+  private pausedIds = new Set<string>();
 
   constructor(deps: SessionManagerDeps) {
     this.deps = deps;
@@ -173,9 +185,12 @@ export class SessionManager {
     const stored = await this.readStoredState();
     this.commands = stored.commands;
     this.quota = stored.quota;
+    const storedIds = new Set(stored.sessions.map((info) => info.id));
     for (const info of stored.sessions) {
       // saved before the vault: its project is read once, then kept (see create)
       info.project ??= projectOf(info.worktree?.home ?? info.cwd);
+      // the worker of a PM forgotten since is no one's (a PM made an ordinary session again lets its workers go: setPm)
+      if (info.pmOf && !storedIds.has(info.pmOf)) info.pmOf = undefined;
       const log = await this.openLog(info.id);
       const session = this.createSession(info, log);
       session.markInterrupted();
@@ -213,6 +228,41 @@ export class SessionManager {
     if (!pauses.length || this.stopping) return;
     this.limitTimer = setTimeout(() => this.resumeDue(), Math.min(MAX_TIMER_MS, Math.max(0, Math.min(...pauses) + LIMIT_RESUME_DELAY_MS - this.now())));
     this.limitTimer.unref();
+  }
+
+  /** Hears every turn that ends, beside what the manager does then (see Session's onTurnEnd). */
+  onSessionTurnEnd(listener: (session: SessionInfo, how: TurnEnd) => void) { this.turnEndListeners.push(listener); }
+
+  /** Hears every session that now waits for the user, beside deps.onAttention. */
+  onSessionAttention(listener: (kind: AttentionKind, session: SessionInfo) => void) { this.attentionListeners.push(listener); }
+
+  /** Hears every session the usage limit pauses, once per pause (not when it is moved later). */
+  onSessionPaused(listener: (session: SessionInfo) => void) { this.pausedListeners.push(listener); }
+
+  /** Hears every session forgotten (switched off), once it is gone from the list. */
+  onSessionForgotten(listener: (session: SessionInfo) => void) { this.forgottenListeners.push(listener); }
+
+  /** Calls each listener; one that throws or rejects is logged and keeps neither the others nor the session from going on. */
+  private tell<L>(listeners: readonly L[], call: (listener: L) => unknown) {
+    const failed = (error: unknown) => this.deps.log('a session listener failed', error);
+    for (const listener of listeners) {
+      try {
+        const result = call(listener);
+        if (result instanceof Promise) result.catch(failed);
+      } catch (error) {
+        failed(error);
+      }
+    }
+  }
+
+  /** A pause began, moved or was lifted: the listeners hear of the ones that began. */
+  private notePause(id: string) {
+    const session = this.sessions.get(id);
+    if (session?.pausedUntil === undefined) { this.pausedIds.delete(id); return; }
+    if (this.pausedIds.has(id)) return;
+    this.pausedIds.add(id);
+    const snapshot = session.snapshot();
+    this.tell(this.pausedListeners, (listener) => listener(snapshot));
   }
 
   /** The user would not wait for the usage limit to reset: the session resumes now. */
@@ -290,6 +340,62 @@ export class SessionManager {
     const switched = asked ? session.relaunch(st.prompt.browserSwitched(asked), st.sessions.stopped.relaunched) : session.release(st.sessions.stopped.browser);
     if (switched) { this.switchingBrowsers.delete(id); this.browserRequests.delete(id); }
     else this.switchingBrowsers.add(id);
+  }
+
+  /**
+   * Makes the session a project manager, or an ordinary session again. Its process must start again for its system
+   * prompt and its tools: released at once while it waits, else once a turn of it is over (like switchBrowsers); its
+   * next message resumes the conversation, told of its new role (Session's PM note). A trigger's run is never a PM.
+   */
+  setPm(id: string, on: boolean) {
+    const session = this.session(id);
+    const info = session.snapshot();
+    if (on && info.trigger) throw new Error(st.pm.triggerRun(info.name));
+    if (!!info.pm === on) return;
+    session.setPm(on);
+    // an ordinary session again lets its workers go (its file stays: made a PM again, it links them anew)
+    if (!on) for (const other of this.sessions.values()) if (other.snapshot().pmOf === id) other.setPmOf(undefined);
+    this.releaseForRole(id);
+  }
+
+  /**
+   * A session whose process runs as another role than it has now: released while it waits; under Remote Control, which
+   * keeps its process, relaunched at once without a message, Remote Control on again (like switch_browser), unless its
+   * scheduled tasks hold the process; at work, once a turn of it is over.
+   */
+  private releaseForRole(id: string) {
+    const session = this.sessions.get(id);
+    if (!session?.roleChanged) { this.changingRole.delete(id); return; }
+    const { remote, scheduled } = session.snapshot();
+    const note = st.sessions.stopped.role;
+    if (session.release(note) || (remote && !scheduled && session.relaunch('', note))) this.changingRole.delete(id);
+    else this.changingRole.add(id);
+  }
+
+  /** Preferences.pm.enabled turned on: the PMs whose process was launched while it was off are released for their role. */
+  pmSettingChanged() {
+    for (const id of this.sessions.keys()) this.releaseForRole(id);
+  }
+
+  /** Whether the session's process runs as another role than it has now (Session.roleChanged). */
+  roleChanged(id: string): boolean { return !!this.sessions.get(id)?.roleChanged; }
+
+  /**
+   * Makes the session a worker of `pm` unless it is another PM's (false then, and for a session unknown). Synchronous,
+   * so that of two PMs adopting the same session at once only one gets it.
+   */
+  claimWorker(id: string, pm: string): boolean {
+    const session = this.sessions.get(id);
+    const owner = session?.snapshot().pmOf;
+    if (!session || (owner && owner !== pm)) return false;
+    if (owner !== pm) session.setPmOf(pm);
+    return true;
+  }
+
+  /** The session is no longer a worker of `pm`; nothing when it is someone else's. */
+  releaseWorker(id: string, pm: string) {
+    const session = this.sessions.get(id);
+    if (session?.snapshot().pmOf === pm) session.setPmOf(undefined);
   }
 
   /** The browser of the user's accounts this session uses; the setting's own: it follows the setting again. */
@@ -391,6 +497,8 @@ export class SessionManager {
   }
 
   private createSession(info: StoredInfo, log: SessionLog): Session {
+    // paused before a restart: the limit hit again is no new pause
+    if (info.pausedUntil !== undefined) this.pausedIds.add(info.id);
     return new Session(info, {
       spawnProcess: (launch, handlers) => {
         if (this.stopping) throw new Error(st.sessions.stoppingNoStart);
@@ -413,14 +521,17 @@ export class SessionManager {
       onCommandDetails: (details) => { if (!this.deps.probeCatalog) this.setCommandDetails(details); },
       onQuota: (quota) => this.setQuota(quota),
       knownReset: () => this.knownReset(),
-      onPauseChanged: () => this.armLimitTimer(),
+      onPauseChanged: () => { this.armLimitTimer(); this.notePause(info.id); },
       onCleared: () => this.awaitingTag.add(info.id),
       allowedDirectory: (cwd) => resolveAllowedDirectory(cwd, this.roots()),
       saveImage: (image) => saveAttachment(attachmentsFolder(this.deps.config.dataDir), image),
       uploadPath: (id) => uploadPath(uploadsFolder(this.deps.config.dataDir), id),
       copyFile: (file) => copyAttachment(attachmentsFolder(this.deps.config.dataDir), file),
       bundlePage: (page, files) => bundlePage(attachmentsFolder(this.deps.config.dataDir), page, files),
-      onAttention: (kind, session) => this.deps.onAttention?.(kind, session),
+      onAttention: (kind, session) => {
+        this.deps.onAttention?.(kind, session);
+        this.tell(this.attentionListeners, (listener) => listener(kind, session));
+      },
       onSubagentLeft: (type) => this.deps.onSubagentLeft?.(info.id, type),
       sharedBrowser: () => this.hasSharedBrowser(info.id),
       chrome: () => !!this.launchedBrowsers.get(info.id)?.chrome,
@@ -430,6 +541,7 @@ export class SessionManager {
       claudeSettings: this.deps.claudeSettings,
       hidden: this.deps.hidden,
       promptSuggestions: this.deps.promptSuggestions,
+      pmEnabled: this.deps.pmEnabled,
       peerName: (address) => this.peerName(address),
       liveCount: () => [...this.sessions.values()].filter((session) => session.alive && !session.leaving).length,
       makeRoom: () => this.makeRoom(info.id),
@@ -438,7 +550,12 @@ export class SessionManager {
       now: this.deps.now,
       graceMs: this.deps.graceMs,
       runShell: this.deps.runShell,
-      onTurnEnd: (session, how) => this.onTurnEnd(session.id, how),
+      onTurnEnd: (session, how) => {
+        this.onTurnEnd(session.id, how);
+        this.tell(this.turnEndListeners, (listener) => listener(session, how));
+      },
+      // the listeners hear it, the manager's own turn-end work (merges) waits for the end of what is queued
+      onTurnEndQueued: (session, how) => this.tell(this.turnEndListeners, (listener) => listener(session, how)),
       onAutoCompactFailed: () => { this.idleCompactPaused = true; },
     });
   }
@@ -678,7 +795,7 @@ export class SessionManager {
    * A new session. `started`: what only the server sets, for a session a trigger starts (server/triggers.ts): the
    * trigger it comes from, the role it runs as, and Remote Control turned on whatever the settings say.
    */
-  async create(options: SessionOptions, started: { trigger?: TriggerTag; role?: string; allowedTools?: string[]; restrict?: TriggerRestrict; remote?: boolean; caps?: { cost: number; minutes: number }; accountsBrowser?: AccountsBrowser; spawned?: boolean } = {}): Promise<SessionInfo> {
+  async create(options: SessionOptions, started: { trigger?: TriggerTag; role?: string; allowedTools?: string[]; restrict?: TriggerRestrict; remote?: boolean; caps?: { cost: number; minutes: number }; accountsBrowser?: AccountsBrowser; spawned?: boolean; pm?: boolean; pmOf?: string } = {}): Promise<SessionInfo> {
     if (this.stopping) throw new Error(st.sessions.stoppingNoCreate);
     if (!this.deps.spawnProcess) throw new Error(st.sessions.claudeMissing);
     const cwd = resolveAllowedDirectory(options.cwd, this.roots());
@@ -712,7 +829,10 @@ export class SessionManager {
     // the project of its keys (server/vault.ts), read now from the folder the user chose and kept: never read again from
     // files its agent could write (one naming another repository); its worktrees are of the same repository
     info.project = projectOf(cwd);
-    if (started.spawned) info.spawned = true;
+    // a PM's worker is started by an agent, like one of create_session
+    if (started.spawned || started.pmOf) info.spawned = true;
+    if (started.pm) info.pm = true;
+    if (started.pmOf) info.pmOf = started.pmOf;
     if (started.trigger) info.trigger = started.trigger;
     if (started.role) info.role = started.role;
     if (started.allowedTools?.length) info.allowedTools = [...started.allowedTools];
@@ -900,6 +1020,7 @@ export class SessionManager {
   private onTurnEnd(id: string, how: TurnEnd) {
     if (how === 'done') this.idleCompactPaused = false;
     if (this.switchingBrowsers.has(id)) this.switchBrowsers(id);
+    if (this.changingRole.has(id)) this.releaseForRole(id);
     void this.refreshGit(id);
     const session = this.sessions.get(id);
     const worktree = session?.snapshot().worktree;
@@ -1126,7 +1247,7 @@ export class SessionManager {
     const taken = new Set([...this.sessions.values()].map((session) => session.snapshot().name));
     const info = newSessionInfo({ id: randomUUID(), name: name && !taken.has(name) ? name : pickSessionName(taken), cwd: source.cwd, model: source.model, permissionMode: source.permissionMode }, this.now());
     Object.assign(info, {
-      forkOf: conversation, introducedAs: source.introducedAs ?? source.name, context: source.context, ...(source.toldSharedBrowser ? { toldSharedBrowser: true as const } : {}), ...(source.toldChrome ? { toldChrome: true as const } : {}), ...(source.toldSecrets ? { toldSecrets: true as const } : {}),
+      forkOf: conversation, introducedAs: source.introducedAs ?? source.name, context: source.context, ...(source.toldSharedBrowser ? { toldSharedBrowser: true as const } : {}), ...(source.toldChrome ? { toldChrome: true as const } : {}), ...(source.toldSecrets ? { toldSecrets: true as const } : {}), ...(source.toldPm ? { toldPm: true as const } : {}), ...(source.pmPrompt ? { pmPrompt: true as const } : {}),
       ...(source.effort ? { effort: source.effort } : {}), ...(source.ultracode ? { ultracode: true } : {}), ...(source.fastMode ? { fastMode: true } : {}), ...(source.untrusted ? { untrusted: true } : {}), ...(source.project ? { project: source.project } : {}), ...(source.spawned ? { spawned: true as const } : {}), ...(source.tags ? { tags: [...source.tags] } : {}), ...(source.role ? { role: source.role } : {}), ...(source.allowedTools ? { allowedTools: [...source.allowedTools] } : {}), ...(source.restrict ? { restrict: source.restrict } : {}),
     });
     const log = await this.openLog(info.id);
@@ -1140,13 +1261,14 @@ export class SessionManager {
     return session.snapshot();
   }
 
-  send(id: string, text: string, images?: readonly ImageUpload[], files?: readonly string[]) {
+  /** `pm`: a message of Open Space to a PM (a worker's report, its setup), never the one that gives its tag. */
+  send(id: string, text: string, images?: readonly ImageUpload[], files?: readonly string[], pm?: PmMessageTag) {
     const session = this.session(id);
     // writing to the session again moves on from a failed merge: its card would stay over the new work
     const worktree = session.snapshot().worktree;
     if (worktree?.merge?.step === 'failed') session.setWorktree({ ...worktree, merge: undefined });
-    session.send(text, images, files);
-    this.tagFromFirstMessage(session, text);
+    session.send(text, images, files, pm);
+    if (!pm) this.tagFromFirstMessage(session, text);
   }
 
   /** A new conversation without tags gets one from its first message, a little later, unless the user put some meanwhile. */
@@ -1242,9 +1364,13 @@ export class SessionManager {
     }
     this.closeAside(id);
     this.sessions.delete(id);
+    this.pausedIds.delete(id);
     this.launchedBrowsers.delete(id);
     this.switchingBrowsers.delete(id);
     this.browserRequests.delete(id);
+    this.changingRole.delete(id);
+    // the workers of a PM forgotten are no one's (as when sessions.json is read again)
+    for (const other of this.sessions.values()) if (other.snapshot().pmOf === id) other.setPmOf(undefined);
     const log = this.logs.get(id);
     this.logs.delete(id);
     await log?.close();
@@ -1257,6 +1383,8 @@ export class SessionManager {
     this.deps.broadcast({ t: 'forgotten', sessionId: id });
     this.save();
     this.sweep();
+    const gone = session.snapshot();
+    this.tell(this.forgottenListeners, (listener) => listener(gone));
   }
 
   /**
@@ -1352,6 +1480,8 @@ function parseStoredSession(raw: unknown): StoredInfo | null {
     permissionMode: isPermissionMode(raw.permissionMode) ? raw.permissionMode : 'manual',
     introducedAs: asString(raw.introducedAs) || undefined,
     forkOf: /^[\w-]{1,100}$/.test(asString(raw.forkOf)) ? asString(raw.forkOf) : undefined,
+    pm: raw.pm === true || undefined,
+    pmOf: SESSION_ID.test(asString(raw.pmOf)) ? asString(raw.pmOf) : undefined,
     quietFrom: typeof raw.quietFrom === 'number' && Number.isInteger(raw.quietFrom) && raw.quietFrom >= 0 ? raw.quietFrom : undefined,
     conversationId: /^[\w-]{1,100}$/.test(asString(raw.conversationId)) ? asString(raw.conversationId) : undefined,
     context: isJson(raw.context) && asNumber(raw.context.max) > 0 ? { used: asNumber(raw.context.used), max: asNumber(raw.context.max) } : undefined,
@@ -1372,6 +1502,8 @@ function parseStoredSession(raw: unknown): StoredInfo | null {
     toldChrome: raw.toldChrome === true || undefined,
     accountsBrowser: raw.accountsBrowser === 'chrome' || raw.accountsBrowser === 'shared' ? raw.accountsBrowser : undefined,
     toldSecrets: raw.toldSecrets === true || undefined,
+    toldPm: raw.toldPm === true || undefined,
+    pmPrompt: raw.pmPrompt === true || undefined,
     trigger: parseTriggerTag(raw.trigger),
     role: ROLE_NAME.test(asString(raw.role)) ? asString(raw.role) : undefined,
     allowedTools: parseAllowRules(raw.allowedTools)?.length ? parseAllowRules(raw.allowedTools)! : undefined,
@@ -1431,6 +1563,10 @@ function parseWorktree(raw: unknown): WorktreeInfo | undefined {
 
 function parseQueue(raw: unknown): SessionInfo['queued'] {
   if (!Array.isArray(raw)) return undefined;
-  const queued = raw.flatMap((item) => (isJson(item) && asString(item.id) && asString(item.text) ? [{ id: asString(item.id), text: asString(item.text) }] : []));
+  const queued = raw.flatMap((item) => {
+    if (!isJson(item) || !asString(item.id) || !asString(item.text)) return [];
+    const pm = parsePmTag(item.pm);
+    return [{ id: asString(item.id), text: asString(item.text), ...(pm ? { pm } : {}) }];
+  });
   return queued.length ? queued : undefined;
 }

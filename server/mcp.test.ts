@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 import type { ModInfo } from '../shared/mods.ts';
+import { PM_TOOL_NAMES, PM_TOOL_USAGE } from '../shared/pm.ts';
 import type { Preferences, SessionInfo } from '../shared/protocol.ts';
 import { parseTriggerInput, type Trigger } from '../shared/triggers.ts';
 import { ExternalKey, handleMcp, MCP_SETTINGS, openSpaceMcpConfig, sessionMcpKey, TOOLS, toolsFor, type Caller, type OpenSpaceApi } from './mcp.ts';
+import { setServerLanguage, st } from './i18n/index.ts';
+import type { Json } from './json.ts';
+import { PmBook } from './pm.ts';
+import { PM_TOOLS } from './pm-tools.ts';
 import { DEFAULT_PREFERENCES, parsePreferences } from './settings.ts';
 
 const base = mkdtempSync(path.join(os.tmpdir(), 'mcp-'));
@@ -328,3 +333,300 @@ describe('the open-space MCP server', () => {
   });
 });
 
+
+/**
+ * fakeApi with project managers s1 and s7 (while `on`); workers start in /work only, each PM file in a fresh folder. `starts`:
+ * the folders startWorker was asked for, refused or not.
+ */
+function pmFake() {
+  const fake = fakeApi();
+  const dir = mkdtempSync(path.join(base, 'pm-'));
+  const book = new PmBook(dir);
+  const session = (id: string, cwd: string, more: object = {}) => ({ id, name: id.toUpperCase(), cwd, state: 'wait', stateSince: 0, permissions: [], ...more });
+  const live = [
+    ...fake.api.sessions(),
+    session('s1', '/work/app', { pm: true, state: 'work' }),
+    session('s2', '/work/app'),
+    session('s6', '/work/other'),
+    session('s7', '/work/app', { pm: true }),
+    session('s8', '/work/app', { pmOf: 's7' }),
+  ] as unknown as SessionInfo[];
+  const find = (id: string) => live.find((each) => each.id === id);
+  const starts: string[] = [];
+  let on = true;
+  const api: OpenSpaceApi = {
+    ...fake.api,
+    sessions: () => live,
+    pm: {
+      isPm: (id) => on && find(id)?.pm === true,
+      book,
+      now: () => 1000,
+      startWorker: async (pm, options) => {
+        const cwd = options.cwd ?? '/work/app';
+        starts.push(cwd);
+        if (!cwd.startsWith('/work/')) throw new Error('not an allowed folder');
+        // named like any session started without a name: someone of the crew
+        const worker = session(`w${live.length}`, cwd, { name: `Crew ${live.length}`, pmOf: pm, state: 'work' }) as unknown as SessionInfo;
+        live.push(worker);
+        return worker;
+      },
+      stopWorker: (id) => { fake.done.push(`stopWorker ${id}`); },
+      claimWorker: (id, pm) => {
+        const found = find(id);
+        if (!found || (found.pmOf && found.pmOf !== pm)) return false;
+        found.pmOf = pm;
+        return true;
+      },
+      releaseWorker: (id, pm) => {
+        const found = find(id);
+        if (found?.pmOf === pm) found.pmOf = undefined;
+      },
+    },
+  };
+  return { ...fake, api, book, dir, find, starts, turnOff: () => { on = false; } };
+}
+
+const PM: Caller = { session: 's1' };
+const OTHER_PM: Caller = { session: 's7' };
+const json = async (api: OpenSpaceApi, name: string, args: Record<string, unknown> = {}) => {
+  const reply = await tool(api, name, args, PM);
+  assert.equal(reply.isError, false, reply.text);
+  return JSON.parse(reply.text);
+};
+const blocks = async (api: OpenSpaceApi, name: string, args: Record<string, unknown> = {}) => (await call(api, 'tools/call', { name, arguments: args }, PM)).result!;
+
+describe('the pm_* tools of the open-space MCP server', () => {
+  it('are listed for a PM session only, never for another caller', async () => {
+    const isPmTool = (each: { name: string }) => each.name.startsWith('pm_');
+    assert.ok(!toolsFor(S1, false).some(isPmTool));
+    assert.deepEqual(toolsFor(S1, true).filter(isPmTool).map((each) => each.name).sort(), [...PM_TOOL_NAMES].sort());
+    assert.ok(!toolsFor(EXTERNAL, true).some(isPmTool));
+    assert.ok(!toolsFor(BOT, true).some(isPmTool));
+    const { api, turnOff } = pmFake();
+    const listed = async () => ((await call(api, 'tools/list', {}, PM)).result!.tools as { name: string }[]).some(isPmTool);
+    assert.equal(await listed(), true);
+    turnOff();
+    assert.equal(await listed(), false, 'the setting turned off');
+  });
+
+  it('refuses them to a session that is not a PM and to other callers, writing nothing', async () => {
+    const { api, dir, turnOff } = pmFake();
+    for (const caller of [{ session: 's6' }, EXTERNAL, BOT]) assert.equal((await tool(api, 'pm_item_add', { title: 'Ship' }, caller)).isError, true, JSON.stringify(caller));
+    turnOff();
+    assert.equal((await tool(api, 'pm_item_add', { title: 'Ship' }, PM)).isError, true, 'the setting turned off');
+    assert.equal((await tool(api, 'pm_status', {}, PM)).isError, true);
+    assert.deepEqual(readdirSync(dir), []);
+  });
+
+  it('numbers tasks and questions in order', async () => {
+    const { api } = pmFake();
+    assert.equal((await json(api, 'pm_item_add', { title: 'Ship the app' })).item, 'W1');
+    assert.equal((await json(api, 'pm_ask', { title: 'Which phone?', detail: 'iPhone, Android or both', answers: ['iPhone', 'Both'], recommended: 'Both' })).ask, 'Q1');
+    assert.equal((await json(api, 'pm_ask', { item: 'W1', title: 'When?', detail: 'Before or after the release' })).ask, 'Q2');
+  });
+
+  // Review Focus 4
+  it('writes to, reads and stops its own workers only', async () => {
+    const { api, book, done } = pmFake();
+    const { session: worker } = await json(api, 'pm_worker_start', { brief: 'Fix the login.' });
+    for (const target of ['s5', 'nope', 's1', 's8']) {
+      assert.equal((await tool(api, 'pm_worker_send', { session: target, text: 'Go on' }, PM)).isError, true, target);
+      assert.equal((await tool(api, 'pm_worker_stop', { session: target }, PM)).isError, true, target);
+      assert.equal((await tool(api, 'pm_worker_read', { session: target }, PM)).isError, true, target);
+    }
+    assert.deepEqual(done, [], 'nothing sent, nothing stopped');
+    assert.equal((await tool(api, 'pm_worker_send', { session: worker, text: 'Go on' }, PM)).isError, false);
+    assert.deepEqual(done, [`send ${worker} Go on`]);
+    await tool(api, 'pm_worker_stop', { session: worker }, PM);
+    assert.deepEqual(done.slice(1), [`stopWorker ${worker}`]);
+    assert.equal((await book.read('s1')).workers[0].watch.stopAsked, 1000, 'its stop is known before its turn ends');
+    await tool(api, 'pm_worker_resolve', { session: worker }, PM);
+    assert.equal((await tool(api, 'pm_worker_send', { session: worker, text: 'Again' }, PM)).isError, true, 'a resolved worker is no longer driven');
+    assert.equal(done.length, 2);
+  });
+
+  it('no longer drives a worker that became a PM or another PM\'s', async () => {
+    const { api, done, find } = pmFake();
+    const { session: worker } = await json(api, 'pm_worker_start', { brief: 'Fix it.' });
+    const live = find(worker)!;
+    live.pm = true;
+    assert.equal((await tool(api, 'pm_worker_send', { session: worker, text: 'Go on' }, PM)).isError, true, 'turned PM');
+    live.pm = undefined;
+    live.pmOf = 's7';
+    assert.equal((await tool(api, 'pm_worker_send', { session: worker, text: 'Go on' }, PM)).isError, true, 'another PM\'s');
+    assert.deepEqual(done, []);
+  });
+
+  it('refuses to make itself its own worker, even from a damaged file', async () => {
+    const { api, book, done } = pmFake();
+    await book.change('s1', (file) => { file.workers.push({ session: 's1', linkedAt: 1, watch: {} }); });
+    assert.equal((await tool(api, 'pm_worker_send', { session: 's1', text: 'Go on' }, PM)).isError, true);
+    assert.deepEqual(done, []);
+  });
+
+  it('adopts a session of its own project only: not itself, another PM, another PM\'s worker nor an automaton\'s run', async () => {
+    const { api, book, find } = pmFake();
+    for (const target of ['s1', 's7', 's8', 's5', 's6', 'nope']) assert.equal((await tool(api, 'pm_worker_link', { session: target }, PM)).isError, true, target);
+    assert.deepEqual((await book.read('s1')).workers, []);
+    assert.equal(find('s8')!.pmOf, 's7', 'another PM\'s worker stays theirs');
+    await json(api, 'pm_worker_link', { session: 's2' });
+    assert.deepEqual((await book.read('s1')).workers.map((each) => each.session), ['s2']);
+    assert.equal(find('s2')!.pmOf, 's1');
+    await tool(api, 'pm_worker_unlink', { session: 's2' }, PM);
+    assert.equal(find('s2')!.pmOf, undefined, 'let go, it is no one\'s');
+  });
+
+  it('lets only one of two PMs adopt the same session at once', async () => {
+    const { api, book, find } = pmFake();
+    const [first, second] = await Promise.all([tool(api, 'pm_worker_link', { session: 's2' }, PM), tool(api, 'pm_worker_link', { session: 's2' }, OTHER_PM)]);
+    assert.deepEqual([first.isError, second.isError], [false, true]);
+    assert.equal(find('s2')!.pmOf, 's1');
+    assert.deepEqual((await book.read('s7')).workers, []);
+  });
+
+  it('lets go of a session it cannot adopt after claiming it', async () => {
+    const { api, book, find } = pmFake();
+    assert.equal((await tool(api, 'pm_worker_link', { session: 's2', item: 'W9' }, PM)).isError, true, 'an unknown task');
+    assert.equal(find('s2')!.pmOf, undefined);
+    assert.deepEqual((await book.read('s1')).workers, []);
+  });
+
+  it('lets go of and stops a worker it started but cannot link', async () => {
+    const { api, book, find, done } = pmFake();
+    const start = api.pm!.startWorker;
+    api.pm!.startWorker = async (pm, options) => {
+      const worker = await start(pm, options);
+      worker.id = 'not a valid id';
+      return worker;
+    };
+    assert.equal((await tool(api, 'pm_worker_start', { brief: 'Fix it.' }, PM)).isError, true);
+    assert.equal(find('not a valid id')!.pmOf, undefined);
+    assert.ok(done.includes('stopWorker not a valid id'));
+    assert.deepEqual((await book.read('s1')).workers, []);
+  });
+
+  it('starts a worker in an allowed folder only, and checks its task before starting it', async () => {
+    const { api, book, starts } = pmFake();
+    await json(api, 'pm_item_add', { title: 'Login' });
+    assert.equal((await tool(api, 'pm_worker_start', { brief: 'Fix it.', cwd: '/etc' }, PM)).isError, true);
+    assert.equal((await tool(api, 'pm_worker_start', { brief: 'Fix it.', item: 'W9' }, PM)).isError, true, 'an unknown task');
+    assert.deepEqual(starts, ['/etc'], 'no session started for an unknown task');
+    assert.deepEqual((await book.read('s1')).workers, []);
+    const started = await json(api, 'pm_worker_start', { brief: 'Fix it.', item: 'W1' });
+    assert.equal(started.item, 'W1');
+    assert.deepEqual((await book.read('s1')).workers.map((each) => [each.session, each.item]), [[started.session, 1]]);
+  });
+
+  it('tells what a worker waits for, never the request id that would answer it', async () => {
+    const { api, find } = pmFake();
+    const { session: worker } = await json(api, 'pm_worker_start', { brief: 'Fix it.' });
+    find(worker)!.permissions = [{ requestId: 'req-4242', who: 'W', tool: 'Bash', detail: 'npm install', canAlways: true }];
+    const read = await tool(api, 'pm_worker_read', { session: worker }, PM);
+    assert.equal(JSON.parse(read.text).waitsFor[0].kind, 'permission');
+    assert.ok(!read.text.includes('req-4242'));
+  });
+
+  it('shows each task\'s status from its workers\' live state, and tells the questions set aside once', async () => {
+    const { api, book } = pmFake();
+    await json(api, 'pm_item_add', { title: 'Login' });
+    await json(api, 'pm_item_add', { title: 'Later' });
+    await json(api, 'pm_worker_start', { brief: 'Fix it.', item: 'W1' });
+    await json(api, 'pm_ask', { title: 'Which phone?', detail: 'iPhone, Android or both' });
+    // the PM's turns go on: W2, untouched since, has no one on it
+    await book.change('s1', (file) => { file.asks[0].state = 'dismissed'; file.turn = 5; });
+    const status = async () => (await blocks(api, 'pm_status')).content as { text: string }[];
+    const first = await status();
+    assert.deepEqual(JSON.parse(first[0].text).items.map((each: { tag: string; status: string }) => [each.tag, each.status]), [['W1', 'inProgress'], ['W2', 'idle']]);
+    assert.equal(first.length, 2, 'the questions set aside come after the result');
+    assert.equal((await status()).length, 1, 'and only once');
+  });
+
+  it('still tells the questions set aside when what the tool does fails', async () => {
+    const { api, book } = pmFake();
+    const { session: worker } = await json(api, 'pm_worker_start', { brief: 'Fix it.' });
+    await json(api, 'pm_ask', { title: 'Which phone?', detail: 'iPhone, Android or both' });
+    await book.change('s1', (file) => { file.asks[0].state = 'dismissed'; });
+    const failing: OpenSpaceApi = { ...api, send: () => { throw new Error('gone'); } };
+    const sent = await blocks(failing, 'pm_worker_send', { session: worker, text: 'Go on' });
+    assert.equal(sent.isError, true);
+    assert.equal((sent.content as unknown[]).length, 2);
+  });
+
+  it('never answers a worker\'s permission or question', async () => {
+    const { api, done } = pmFake();
+    const { session: worker } = await json(api, 'pm_worker_start', { brief: 'Fix it.' });
+    const { session: spare } = await json(api, 'pm_worker_start', { brief: 'Wait.' });
+    await json(api, 'pm_ask', { title: 'Asked before', detail: 'Context' });
+    const args: Record<(typeof PM_TOOL_NAMES)[number], Record<string, unknown>> = {
+      pm_status: {}, pm_set_mission: { mission: 'Ship' }, pm_set_instructions: { instructions: 'Small PRs' }, pm_remember: { text: 'iPhone only' }, pm_forget: { number: 1 },
+      pm_item_add: { title: 'Login', worker }, pm_item_update: { item: 'W1', now: 'Testing', step: 'Write the test' }, pm_item_list: {},
+      pm_ask: { title: 'Which?', detail: 'Context' }, pm_ask_done: { tag: 'Q1' }, pm_ask_withdraw: { tag: 'Q2' }, pm_link_add: { item: 'W1', url: 'https://example.com/pull/1' },
+      pm_worker_start: { brief: 'Go.' }, pm_worker_link: { session: 's2' }, pm_worker_unlink: { session: 's2' }, pm_worker_resolve: { session: spare },
+      pm_worker_send: { session: worker, text: 'yes' }, pm_worker_read: { session: worker }, pm_worker_stop: { session: worker },
+    };
+    // each one carried out, so that none stops short of what it does
+    for (const name of PM_TOOL_NAMES) assert.equal((await tool(api, name, args[name], PM)).isError, false, name);
+    assert.deepEqual(done.filter((each) => /^(answer|reply) /.test(each)), []);
+  });
+
+  it('refuses an argument it does not name, of another type, or a required text left blank, and says the right ones', async () => {
+    const { api, dir, done } = pmFake();
+    const wrong: [(typeof PM_TOOL_NAMES)[number], Record<string, unknown>][] = [
+      ['pm_set_mission', { text: 'Ship' }], ['pm_set_mission', { mission: '  ' }], ['pm_forget', { number: '1' }],
+      ['pm_item_add', { title: 'Login', note: 'soon' }], ['pm_worker_send', { text: 'Go on' }],
+    ];
+    for (const [name, args] of wrong) {
+      const reply = await tool(api, name, args, PM);
+      assert.equal(reply.isError, true, `${name} ${JSON.stringify(args)}`);
+      assert.ok(reply.text.includes(PM_TOOL_USAGE[name]), `${name}: the arguments it expects`);
+    }
+    assert.deepEqual(readdirSync(dir), [], 'nothing written');
+    assert.deepEqual(done, []);
+  });
+
+  it('keeps the mission and the instructions given under their own names', async () => {
+    const { api } = pmFake();
+    assert.equal((await tool(api, 'pm_set_mission', { mission: 'Ship v2' }, PM)).isError, false);
+    assert.equal((await tool(api, 'pm_set_instructions', { instructions: 'Small PRs' }, PM)).isError, false);
+    const { mission, instructions } = await json(api, 'pm_status');
+    assert.deepEqual([mission, instructions], ['Ship v2', 'Small PRs']);
+  });
+
+  it('tells a PM each tool with its exact arguments, in both languages', () => {
+    try {
+      for (const language of ['fr', 'en'] as const) {
+        setServerLanguage(language);
+        const lines = st.prompt.pm('').split('\n');
+        for (const { name, inputSchema } of PM_TOOLS) {
+          const line = lines.find((each) => each.includes(`${name}(`));
+          assert.ok(line, `${language}: ${name}`);
+          const { properties = {}, required = [] } = inputSchema as { properties?: Json; required?: string[] };
+          for (const key of Object.keys(properties)) assert.match(line, new RegExp(`\\b${key}\\b`), `${language}: ${name} ${key}`);
+          for (const key of required) assert.match(line, new RegExp(`\\b${key}\\b(?!\\?)`), `${language}: ${name} ${key} is required`);
+        }
+      }
+    } finally {
+      setServerLanguage('fr');
+    }
+  });
+
+  it('names a worker by its session id, the tag of its task or its name, never one of several', async () => {
+    const { api, book, done } = pmFake();
+    await json(api, 'pm_item_add', { title: 'Login' });
+    await json(api, 'pm_item_add', { title: 'Docs' });
+    const { session: login } = await json(api, 'pm_worker_start', { brief: 'Fix it.', item: 'W1' });
+    const { session: docs, name: docsName } = await json(api, 'pm_worker_start', { brief: 'Write them.', item: 'W2' });
+    const named: [Record<string, unknown>, string][] = [[{ session: login }, login], [{ session: 'W1' }, login], [{ item: 'W2' }, docs], [{ session: docsName }, docs]];
+    for (const [args, to] of named) {
+      done.length = 0;
+      assert.equal((await tool(api, 'pm_worker_send', { ...args, text: 'Go on' }, PM)).isError, false, JSON.stringify(args));
+      assert.deepEqual(done, [`send ${to} Go on`]);
+    }
+    done.length = 0;
+    await json(api, 'pm_worker_start', { brief: 'Test it.', item: 'W1' });
+    for (const session of ['W1', 'W3', 'Nobody']) assert.equal((await tool(api, 'pm_worker_send', { session, text: 'Go on' }, PM)).isError, true, session);
+    assert.deepEqual(done, [], 'two workers on W1: neither');
+    assert.equal((await tool(api, 'pm_worker_resolve', { item: 'W2' }, PM)).isError, false);
+    assert.ok((await book.read('s1')).workers.find((worker) => worker.session === docs)?.resolvedAt);
+  });
+});

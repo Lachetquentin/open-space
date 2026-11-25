@@ -7,7 +7,7 @@ import path from 'node:path';
 import { tail } from '../shared/activity.ts';
 import type { ClaudeSettings } from '../shared/claude-settings.ts';
 import { cleanPending, MAX_DISMISSED } from '../shared/pending.ts';
-import type { AccountsBrowser, AttentionKind, BackgroundTask, ChromeView, GitPending, ImageUpload, Inspection, InspectView, McpAction, OfficeEvent, PermissionDecision, PermissionPrompt, Quota, RemoteControl, ServerMessage, SessionInfo, SlashCommand, SessionState, TuneChange, UsageReport, WorktreeInfo } from '../shared/protocol.ts';
+import type { AccountsBrowser, AttentionKind, BackgroundTask, ChromeView, GitPending, ImageUpload, Inspection, InspectView, McpAction, OfficeEvent, PermissionDecision, PermissionPrompt, PmMessageTag, Quota, RemoteControl, ServerMessage, SessionInfo, SlashCommand, SessionState, TuneChange, UsageReport, WorktreeInfo } from '../shared/protocol.ts';
 import { VIDEO_EXTENSIONS } from './attachments.ts';
 import { chromeNote, placeNote, renameNote, secretsNote, sharedBrowserNote, type ProcessFactory, type ProcessHandle } from './claude-process.ts';
 import type { KeysCard } from '../shared/secrets.ts';
@@ -71,6 +71,8 @@ export interface SessionDeps {
   hidden?: readonly string[];
   /** Claude Code predicts the next message after each turn (Preferences.promptSuggestions), read at each launch */
   promptSuggestions?: () => boolean;
+  /** the PM setting is on (Preferences.pm.enabled), read at each launch: a PM runs as one only then */
+  pmEnabled?: () => boolean;
   /** the name of the session a SendMessage call goes to (see Normalizer) */
   peerName?: (address: string) => string;
   /** time source, replaceable in tests */
@@ -85,6 +87,8 @@ export interface SessionDeps {
    * what a merge under way waits for
    */
   onTurnEnd?: (session: SessionInfo, how: TurnEnd) => void;
+  /** a turn ended with messages queued behind it, which leave at once (onTurnEnd is not called then) */
+  onTurnEndQueued?: (session: SessionInfo, how: TurnEnd) => void;
   /** a compaction asked by autoCompact ended without compacting (the session limit reached, most often) */
   onAutoCompactFailed?: () => void;
   /** /clear started a new conversation: its tags are gone, its first plain message may name new ones */
@@ -164,6 +168,8 @@ export class Session {
   private socket = '';
   /** the commands run with "!" since the last message, with what they wrote, in Claude Code's own format: they go with the next one */
   private shellNotes: string[] = [];
+  /** its current process was launched as a PM (playbook, pm_* tools allowed): what its conversation is told it is (toldPm) */
+  private launchedAsPm = false;
   /** the "!" commands still running, by their id, to stop them */
   /** the "!" commands still running: how to stop each, and its end */
   private shells = new Map<string, { stop: AbortController; done: Promise<unknown> }>();
@@ -199,6 +205,8 @@ export class Session {
   get alive() { return !!this.process?.alive; }
   /** its process is alive but asked to go, having waited long enough: it no longer counts against the limit */
   get leaving() { return !!this.process?.alive && this.stopRequest?.reason === 'idle'; }
+  /** Its process runs as another role than it has now (made a PM or not since, the PM setting turned on or off): see SessionManager.releaseForRole. */
+  get roleChanged() { return !!this.process?.alive && this.launchedAsPm !== this.wantsPm(); }
   /** True when a SendMessage address ("uds:/tmp/…" or the path alone) is this session's live process. */
   answersAt(address: string) { return !!this.socket && this.alive && address.replace(/^uds:/, '') === this.socket; }
   snapshot(): SessionInfo {
@@ -260,14 +268,14 @@ export class Session {
    * A message from the user. During a turn it waits in the queue (the user sees it, can take it back, or interrupt the
    * turn to send it at once with sendNow); it leaves when the turn ends. Otherwise it leaves now, after anything still queued.
    */
-  send(text: string, images: readonly ImageUpload[] = [], files: readonly string[] = []) {
+  send(text: string, images: readonly ImageUpload[] = [], files: readonly string[] = [], pm?: PmMessageTag) {
     const clean = text.trim();
     if (!clean && !images.length && !files.length) return;
     if (this.stopRequest) throw new Error(st.sessions.closing);
     const id = randomUUID();
     if (images.length) this.queuedImages.set(id, images);
     if (files.length) this.queuedFiles.set(id, files);
-    this.info.queued = [...(this.info.queued ?? []), { id, text: clean, ...(images.length ? { images: images.length } : {}), ...(files.length ? { files: files.length } : {}) }];
+    this.info.queued = [...(this.info.queued ?? []), { id, text: clean, ...(images.length ? { images: images.length } : {}), ...(files.length ? { files: files.length } : {}), ...(pm ? { pm } : {}) }];
     if (this.busy || this.preparing || this.paused) { this.publish(); return; }
     this.sendQueued();
   }
@@ -435,23 +443,26 @@ export class Session {
     timer.unref();
   }
 
-  /** Sends the oldest queued messages as one: the plain ones together, a slash command alone (it must come first). */
+  /**
+   * Sends the oldest queued messages as one: the plain ones together; a slash command alone (it must come first), and a
+   * message of Open Space to a PM alone too (its tag says what the whole message is).
+   */
   private sendQueued() {
     const queued = this.info.queued ?? [];
     if (!queued.length || this.paused) return;
-    const isCommand = (message: { text: string }) => message.text.startsWith('/');
-    const firstCommand = queued.findIndex(isCommand);
-    const count = firstCommand === 0 ? 1 : firstCommand === -1 ? queued.length : firstCommand;
+    const alone = (message: { text: string; pm?: PmMessageTag }) => message.text.startsWith('/') || !!message.pm;
+    const firstAlone = queued.findIndex(alone);
+    const count = firstAlone === 0 ? 1 : firstAlone === -1 ? queued.length : firstAlone;
     const batch = queued.slice(0, count);
     // the queue only shrinks once the message has left: a refusal (too many live sessions) keeps it
-    this.deliver(batch.map((message) => message.text).filter(Boolean).join('\n\n'), batch.flatMap((message) => this.queuedImages.get(message.id) ?? []), batch.flatMap((message) => this.queuedFiles.get(message.id) ?? []));
+    this.deliver(batch.map((message) => message.text).filter(Boolean).join('\n\n'), batch.flatMap((message) => this.queuedImages.get(message.id) ?? []), batch.flatMap((message) => this.queuedFiles.get(message.id) ?? []), undefined, batch[0].pm);
     for (const message of batch) { this.queuedImages.delete(message.id); this.queuedFiles.delete(message.id); }
     this.info.queued = queued.length > count ? queued.slice(count) : undefined;
     this.publish();
   }
 
-  /** `shown`: what the thread shows instead of the text. */
-  private deliver(clean: string, images: readonly ImageUpload[], files: readonly string[] = [], shown?: string) {
+  /** `shown`: what the thread shows instead of the text; `pm`: the tag of a message of Open Space to a PM. */
+  private deliver(clean: string, images: readonly ImageUpload[], files: readonly string[] = [], shown?: string, pm?: PmMessageTag) {
     this.clearIdleTimer();
     this.suggestion = undefined;
     this.turnOutput = false;
@@ -504,6 +515,13 @@ export class Session {
       outgoing = secretsNote(this.deps.identity?.().user) + outgoing;
       this.info.toldSecrets = true;
     }
+    // made a PM or an ordinary session again since its conversation started: told once its process runs as one, with the
+    // whole playbook (a resumed conversation keeps the system prompt it started with); not while a role change is pending
+    // (a queued message leaves without the release): the relaunch will tell the right role
+    if (this.launchedAsPm !== !!this.info.toldPm && !command && !this.roleChanged) {
+      outgoing = (this.launchedAsPm ? st.prompt.pmOn(this.deps.identity?.().user.trim() ?? '') : st.prompt.pmOff) + outgoing;
+      this.info.toldPm = this.launchedAsPm || undefined;
+    }
     if (this.shellNotes.length && !command) {
       outgoing = `${this.shellNotes.join('\n\n')}\n\n${outgoing}`;
       this.shellNotes = [];
@@ -517,7 +535,7 @@ export class Session {
       return file ? [{ id, name: path.basename(file), size: statSync(file).size, file }] : [];
     });
     if (uploaded.length) outgoing = [outgoing, st.prompt.attached(uploaded.map((upload) => upload.file))].filter(Boolean).join('\n\n');
-    this.record({ k: 'start', text: shown ?? clean, ...(names.length ? { images: names } : {}), ...(uploaded.length ? { files: uploaded.map(({ id, name, size }) => ({ id, name, size })) } : {}) });
+    this.record({ k: 'start', text: shown ?? clean, ...(names.length ? { images: names } : {}), ...(uploaded.length ? { files: uploaded.map(({ id, name, size }) => ({ id, name, size })) } : {}), ...(pm ? { pm } : {}) });
     if (uploaded.length < files.length) this.record({ k: 'note', text: st.sessions.uploadsGone(files.length - uploaded.length) });
     this.apply({ type: spawning ? 'spawn' : 'send' });
     this.process?.send(outgoing, images);
@@ -571,8 +589,14 @@ export class Session {
       agentLaunch: (agentId) => agentLaunch(cwd, this.conversationId, agentId),
       cwd,
     });
+    this.launchedAsPm = this.wantsPm();
+    // a new conversation has the playbook in its system prompt
+    if (!this.info.resumable && !this.info.forkOf) {
+      this.info.toldPm = this.launchedAsPm || undefined;
+      this.info.pmPrompt = this.launchedAsPm || undefined;
+    }
     const handle: ProcessHandle = this.deps.spawnProcess(
-      { cwd, sessionId: this.conversationId, resume: this.info.resumable, model: this.info.model, ...(this.info.effort ? { effort: this.info.effort } : {}), ...(this.info.ultracode ? { ultracode: true } : {}), ...(this.info.fastMode ? { fastMode: true } : {}), permissionMode: this.info.permissionMode, name: this.info.name, ...this.deps.identity?.(), ...(this.info.untrusted ? { untrusted: true } : {}), ...(this.deps.claudeSettings ? { settings: this.deps.claudeSettings() } : {}), ...(this.deps.promptSuggestions?.() && !this.info.trigger ? { promptSuggestions: true } : {}), ...(this.info.forkOf ? { forkOf: this.info.forkOf } : {}), ...(this.info.worktree ? { worktree: this.info.worktree } : {}), ...(this.info.role ? { agent: this.info.role } : {}), ...(this.info.trigger ? { run: true } : {}), ...(this.info.allowedTools?.length ? { allowedTools: this.info.allowedTools } : {}), ...(this.info.restrict ? { restrict: this.info.restrict } : {}), ...(this.deps.hidden?.length ? { hidden: this.deps.hidden } : {}) },
+      { cwd, sessionId: this.conversationId, resume: this.info.resumable, model: this.info.model, ...(this.info.effort ? { effort: this.info.effort } : {}), ...(this.info.ultracode ? { ultracode: true } : {}), ...(this.info.fastMode ? { fastMode: true } : {}), permissionMode: this.info.permissionMode, name: this.info.name, ...this.deps.identity?.(), ...(this.info.untrusted ? { untrusted: true } : {}), ...(this.deps.claudeSettings ? { settings: this.deps.claudeSettings() } : {}), ...(this.deps.promptSuggestions?.() && !this.info.trigger ? { promptSuggestions: true } : {}), ...(this.info.forkOf ? { forkOf: this.info.forkOf } : {}), ...(this.info.worktree ? { worktree: this.info.worktree } : {}), ...(this.info.role ? { agent: this.info.role } : {}), ...(this.info.trigger ? { run: true } : {}), ...(this.launchedAsPm ? { pm: true } : {}), ...(this.info.allowedTools?.length ? { allowedTools: this.info.allowedTools } : {}), ...(this.info.restrict ? { restrict: this.info.restrict } : {}), ...(this.deps.hidden?.length ? { hidden: this.deps.hidden } : {}) },
       {
         onMessage: (message) => {
           if (this.process !== handle) return; // a previous process still talking
@@ -607,6 +631,10 @@ export class Session {
       this.info.toldSharedBrowser = undefined;
       this.info.toldChrome = undefined;
       this.info.toldSecrets = undefined;
+      // the PM note went with it too; and whether the new conversation got the playbook in its system prompt depends on
+      // how this process was launched (--append-system-prompt only with a new one): told again, to be sure
+      this.info.toldPm = undefined;
+      this.info.pmPrompt = undefined;
       this.info.tags = undefined;
       this.info.pending = undefined;
       this.info.dismissedPending = undefined;
@@ -806,6 +834,9 @@ export class Session {
     this.publish();
   }
 
+  /** It runs as a PM when it is one, not a trigger's run, and the setting is on (read at each launch). */
+  private wantsPm() { return !!(this.info.pm && !this.info.trigger && this.deps.pmEnabled?.()); }
+
   /** Sub-agents and commands still at work in the background would die with the process, and Remote Control with it. */
   private keepsProcess() {
     return this.info.subagents.length > 0 || !!this.info.background || !!this.remote;
@@ -825,7 +856,13 @@ export class Session {
     // what Claude says while Open Space compacts on its own (an error, the session limit) is not shown
     if (event.k === 'say' && this.autoCompaction) return;
     const ev: OfficeEvent = event.k === 'compact' && this.autoCompaction ? { ...event, idle: true } : event;
-    if (ev.k === 'compact') { this.info.compacting = undefined; if (this.autoCompaction) this.autoCompaction.compacted = true; this.publish(); }
+    if (ev.k === 'compact') {
+      this.info.compacting = undefined;
+      if (this.autoCompaction) this.autoCompaction.compacted = true;
+      // a PM note does not survive the summary, only the system prompt does: told again with the next message
+      this.info.toldPm = this.info.pmPrompt;
+      this.publish();
+    }
     // the whole message is here: what was left of it to send is not needed any more
     if (ev.k === 'say') this.partials.delete(ev.who);
     // Claude Code's init (it opens every turn) is not something happening in it
@@ -1045,7 +1082,11 @@ export class Session {
       return;
     }
     // queued messages leave at once: the session works again, nothing to tell the user
-    if (this.info.queued?.length && !this.paused) { this.sendQueued(); return; }
+    if (this.info.queued?.length && !this.paused) {
+      this.deps.onTurnEndQueued?.(this.snapshot(), how);
+      this.sendQueued();
+      return;
+    }
     this.armIdleTimer();
     // a turn the user stopped themselves needs no telling either, nor one the usage limit paused
     if (tell && !this.paused) this.deps.onAttention?.('finished', this.snapshot());
@@ -1195,8 +1236,9 @@ export class Session {
   }
 
   /**
-   * Restarts its process right away with `text` as its next message (the conversation goes on with --resume), and
-   * Remote Control again if it was on. false: it is at work, or busy in the background.
+   * Restarts its process right away with `text` as its next message (the conversation goes on with --resume; '': none,
+   * the process only starts again for Remote Control), and Remote Control again if it was on. false: it is at work, or
+   * busy in the background.
    */
   relaunch(text: string, note: string): boolean {
     if (!this.process?.alive || this.context.state !== 'wait' || this.info.subagents.length > 0 || this.info.background) return false;
@@ -1211,6 +1253,18 @@ export class Session {
     };
     void this.process.stop(2000);
     return true;
+  }
+
+  /** Makes it a project manager, or an ordinary session again: its process runs as one from its next launch (SessionManager.setPm). */
+  setPm(on: boolean) {
+    this.info.pm = on || undefined;
+    this.publish();
+  }
+
+  /** Makes it a worker of that PM, or no one's (undefined). */
+  setPmOf(pm: string | undefined) {
+    this.info.pmOf = pm;
+    this.publish();
   }
 
   /** The browser of the user's accounts it uses, whatever the setting; undefined: the setting's (see SessionManager.switchBrowsers). */

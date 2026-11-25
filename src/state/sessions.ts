@@ -408,6 +408,11 @@ export interface CommandPostState {
   createSession: (options: SessionOptions) => boolean;
   /** a new session going on from this one's conversation; it opens like a new one */
   duplicateSession: (sessionId: string) => void;
+  /** a new project manager in this folder, on `model`, else the one the server picks (the last one a PM had, else the settings'); it opens like a new one */
+  createPm: (cwd: string, model?: string) => void;
+  /** makes the session a project manager, or an ordinary session again */
+  convertPm: (sessionId: string) => void;
+  revertPm: (sessionId: string) => void;
   /** opens a terminal on the computer, in the folder of the session (the server finds it); without one, in the default folder */
   openTerminal: (sessionId?: string | null) => void;
   /** the user's answer to `trustRequest`: trust the folder, run without its settings, or give up (null) */
@@ -729,7 +734,9 @@ export const useSessions = create<CommandPostState>((set, get) => ({
       case 'modCreated': get().openMod(message.id); break;
       case 'modEnv': heardModEnv(message.id, message.env); break;
       case 'modStore': heardModStore(message.id, message.name, message.value); break;
-      case 'toast': s.toast(message.kind, message.text); break;
+      // this page's request for a new session refused (folder not approved, PM setting off): the next new one does not open
+      // as if it were it; any other error (another tab's, a log that cannot be written) leaves the wait as it is
+      case 'toast': if (message.refused === 'new') set({ awaitingNew: false }); s.toast(message.kind, message.text); break;
     }
   },
 
@@ -1119,6 +1126,9 @@ export const useSessions = create<CommandPostState>((set, get) => ({
 
   openTerminal: (sessionId) => get().send(sessionId ? { t: 'openTerminal', sessionId } : { t: 'openTerminal' }),
   duplicateSession: (sessionId) => { set({ awaitingNew: true }); get().send({ t: 'duplicate', sessionId }); },
+  createPm: (cwd, model) => { if (get().send({ t: 'pmCreate', cwd, ...(model ? { model } : {}) })) set({ awaitingNew: true }); },
+  convertPm: (sessionId) => { get().send({ t: 'pmConvert', sessionId }); },
+  revertPm: (sessionId) => { get().send({ t: 'pmRevert', sessionId }); },
   createSession: (options) => {
     if (!get().send({ t: 'create', options })) return false;
     set({ awaitingNew: true });
