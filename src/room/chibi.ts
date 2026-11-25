@@ -106,11 +106,30 @@ const NEAR_ARM = { x: 1, elbowY: 19 };
 
 type Paint = (x: number, y: number, width: number, height: number, colour: string) => void;
 
-/** A project manager's clipboard, its sheet to us (b board, d its dark edge, c the clip, p the sheet, l its lines). */
-const CLIPBOARD_FRONT = ['.cc..', 'bccbb', 'bpppb', 'blllb', 'bpppb', 'bllpb', 'bbbbd'];
-/** The same seen from behind, past the hand: the edge of the board and its clip. */
-const CLIPBOARD_BACK = ['c.', 'bd', 'bd', 'bd', 'bd', 'bd'];
-const CLIPBOARD_PAINT: Readonly<Record<string, string>> = { b: CLIPBOARD.board, d: CLIPBOARD.boardDark, c: CLIPBOARD.clip, p: CLIPBOARD.paper, l: CLIPBOARD.line };
+/**
+ * A project manager's clipboard, its sheet to us, big enough to read at desktop size (b board, d its dark edge, c the
+ * clip, k its hinge, p the sheet, l its lines, o a line of ink on the side of the body, where the outline does not run).
+ */
+const CLIPBOARD_FRONT = [
+  '..ccc..',
+  'bbckcbo',
+  'bpppppo',
+  'bplllpo',
+  'bpppppo',
+  'bpllppo',
+  'bpppppo',
+  'bplllpo',
+  'bpppppo',
+  'ddddddo',
+];
+/** Where it is held, beside the near arm and over it, high enough to clear the desk of someone seated (x -4 keeps
+ * its outline on the canvas). */
+const CLIPBOARD_AT = { x: -4, y: 11 };
+/** The same seen from behind, past the far arm: the back of the board and its clip. */
+const CLIPBOARD_BACK = ['kc.', 'bbd', 'bbd', 'bbd', 'bbd', 'bbd', 'bbd', 'bbd', 'ddd'];
+const CLIPBOARD_PAINT: Readonly<Record<string, string>> = {
+  b: CLIPBOARD.board, d: CLIPBOARD.boardDark, c: CLIPBOARD.clip, k: CLIPBOARD.clipDark, p: CLIPBOARD.paper, l: CLIPBOARD.line, o: INK.outline,
+};
 
 function paintClipboard(P: (x: number, y: number, colour: string) => void, rows: readonly string[], x: number, y: number) {
   for (const [line, row] of rows.entries()) [...row].forEach((letter, column) => { if (CLIPBOARD_PAINT[letter]) P(x + column, y + line, CLIPBOARD_PAINT[letter]); });
@@ -263,9 +282,6 @@ function paint(worn: Look, frame: Frame, outfit: Outfit): HTMLCanvasElement {
         break;
       case 'none': if (front && !swim) { R(4, 15 + up, 3, 1, skin.shade); R(9, 15 + up, 3, 1, skin.shade); P(8, 18 + up, skin.dark); } else if (back) R(8, 14 + up, 1, 5, skin.shade); break;
     }
-    // a project manager's clipboard, under the arms so the near hand holds its edge; typing, it stands propped against
-    // that arm, above the desk
-    if (outfit.clipboard && !back) paintClipboard(P, CLIPBOARD_FRONT, -3, 14 + up + swing);
     // arms: bare, short sleeves and bare forearms, or long sleeves to the wrist
     const bareArms = look.top === 'none' || look.top === 'tank';
     const longSleeves = LONG_SLEEVES.has(look.top);
@@ -282,13 +298,9 @@ function paint(worn: Look, frame: Frame, outfit: Outfit): HTMLCanvasElement {
     });
     paintCostumeTop(R, P, dressed, body);
     paintWardrobeTop(R, P, dressed, body);
-    if (outfit.clipboard && back) paintClipboard(P, CLIPBOARD_BACK, 15, 15 + up - swing);
+    // from behind, the clipboard held ahead shows past the far arm (the hair, nearer to us, goes over it)
+    if (outfit.clipboard && back) paintClipboard(P, CLIPBOARD_BACK, 15, 13 + up - swing);
     if (look.watch && !back && !typing) R(1, 18 + up + swing, 2, 1, INK.watch);
-    // a water gun in the near hand, pointing ahead, its tank on top
-    if (outfit.waterGun && !back && !typing) {
-      const y = 17 + up + swing;
-      R(-3, y, 5, 2, F.waterGun); R(0, y + 2, 2, 2, F.waterGun); R(-2, y - 2, 3, 2, F.waterGunTank); P(-4, y, tones(F.waterGun).dark);
-    }
   }
 
   // the head, and what of the hair hangs behind it
@@ -426,6 +438,16 @@ function paint(worn: Look, frame: Frame, outfit: Outfit): HTMLCanvasElement {
       case 'braids': ball(R, 8, 5.5 + up, 7.1, 6.6, hair); braid(4, 10, 18); braid(10, 10, 18); break;
       case 'long': case 'bangs': ball(R, 8, 5.5 + up, 7.1, 6.6, hair); R(1, 6 + up, 15, 10, hair.base); R(1, 6 + up, 2, 10, hair.light); R(13, 6 + up, 3, 10, hair.shade); break;
       default: paintWardrobeHair(R, P, look, body);
+    }
+  }
+  if (look.top !== 'blanket' && !back) {
+    // a project manager's clipboard, held out ahead over the near arm and past the hair that falls on that shoulder
+    // (typing, that arm's hand is on the keys: drawTypingHand)
+    if (outfit.clipboard) paintClipboard(P, CLIPBOARD_FRONT, CLIPBOARD_AT.x, CLIPBOARD_AT.y + up + swing);
+    // a water gun in the near hand, pointing ahead, its tank on top (over the clipboard, as it always was)
+    if (outfit.waterGun && frame.gesture !== 'typing') {
+      const y = 17 + up + swing;
+      R(-3, y, 5, 2, F.waterGun); R(0, y + 2, 2, 2, F.waterGun); R(-2, y - 2, 3, 2, F.waterGunTank); P(-4, y, tones(F.waterGun).dark);
     }
   }
   paintAccessory(R, P, dressed, body);
