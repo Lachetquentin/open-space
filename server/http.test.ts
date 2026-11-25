@@ -9,6 +9,7 @@ import { after, before, describe, it } from 'node:test';
 import vm from 'node:vm';
 import WebSocket from 'ws';
 import { createWebServer } from './http.ts';
+import { pageDocument } from './pm-pages.ts';
 import { loopbackPolicy } from './security.ts';
 
 const SECRET = 'test-secret';
@@ -233,6 +234,17 @@ describe('HTTP requests', () => {
     assert.ok(kit, 'the kit sends the answers');
     assert.doesNotThrow(() => new vm.Script(kit[2]), 'the kit is valid JavaScript');
     assert.doesNotMatch(body, /[\s/]http-equiv\s*=/i, 'no meta of the page refreshes it elsewhere');
+  });
+
+  it('keeps a live page’s words as written, and stops its meta tags from refreshing it', () => {
+    const { body } = pageDocument('<p>the http-equiv attribute</p><meta http-equiv="refresh" content="0;url=https://x"><META HTTP-EQUIV=refresh content="0;url=https://y">');
+    assert.match(body, /<p>the http-equiv attribute<\/p>/);
+    assert.doesNotMatch(body, /[\s/]http-equiv\s*=/i, 'no meta refreshes the page');
+  });
+
+  it('has the kit of a live page stop every link click, so a link cannot take what was typed', () => {
+    const kit = [...pageDocument('<a href="https://x">x</a>').body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].find((match) => match[1].includes('pm.page.submit'));
+    assert.match(kit?.[1] ?? '', /closest\('a\[href\], area\[href\]'\)\) event\.preventDefault\(\)/);
   });
 
   it('runs only the kit in a PM’s live page: its own scripts and handlers stay inert', async () => {
