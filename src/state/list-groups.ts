@@ -57,11 +57,11 @@ const flat = (rows: readonly ListRow[]): SessionInfo[] => rows.flatMap((row) => 
 
 /**
  * The workers shown under a PM's line: all of them while it is unfolded; folded, still those that wait for the user (a
- * question, a permission, a reply to read), which must never hide under their PM.
+ * question, a permission, a reply to read) and those the user has open (`openIds`), which must never hide under their PM.
  */
-export function shownWorkers(row: ListRow, folded: boolean, seen: SeenSequences): SessionInfo[] {
+export function shownWorkers(row: ListRow, folded: boolean, seen: SeenSequences, openIds: ReadonlySet<string>): SessionInfo[] {
   const workers = row.workers ?? [];
-  return folded ? workers.filter((session) => attentionKind(session, seen) !== null) : workers;
+  return folded ? workers.filter((session) => openIds.has(session.id) || attentionKind(session, seen) !== null) : workers;
 }
 
 /** `later`: the leftovers the user put off (pending-later.ts), whose sessions go with the done ones. */

@@ -88,7 +88,13 @@ describe('the list with project managers', () => {
   it('a folded PM still shows its worker waiting for the user', () => {
     const [group] = listGroups([lead, atWork, asking], { pm: 1 }, 'project');
     const row = group.rows[0];
-    assert.deepEqual(shownWorkers(row, false, {}).map((each) => each.id), ['w1', 'w2']);
-    assert.deepEqual(shownWorkers(row, true, {}).map((each) => each.id), ['w2']);
+    assert.deepEqual(shownWorkers(row, false, {}, new Set()).map((each) => each.id), ['w1', 'w2']);
+    assert.deepEqual(shownWorkers(row, true, {}, new Set()).map((each) => each.id), ['w2']);
+  });
+
+  it('a folded PM still shows its open worker, and hides the other idle ones', () => {
+    const [group] = listGroups([lead, atWork, asking], { pm: 1 }, 'project');
+    assert.deepEqual(shownWorkers(group.rows[0], true, {}, new Set(['w1'])).map((each) => each.id), ['w1', 'w2']);
+    assert.deepEqual(shownWorkers(group.rows[0], true, {}, new Set()).map((each) => each.id), ['w2']);
   });
 });

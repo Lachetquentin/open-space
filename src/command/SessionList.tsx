@@ -179,7 +179,7 @@ export function SessionList() {
                 if (!workers) return <li key={session.id}>{item(session, group, false)}</li>;
                 const pmFold = pmFolded.includes(session.id);
                 // folded down to the faces, every worker shows
-                const shown = narrow ? workers : shownWorkers(row, pmFold, seen);
+                const shown = narrow ? workers : shownWorkers(row, pmFold, seen, new Set([...openIds, ...(selectedId ? [selectedId] : [])]));
                 const label = pmFold ? t.pm.list.unfold(session.name) : t.pm.list.fold(session.name);
                 return (
                   <li key={session.id} className="cp-list__lead">
