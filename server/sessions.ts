@@ -32,6 +32,7 @@ import { MAX_NAME } from './messages.ts';
 import { storedTags } from '../shared/tags.ts';
 import { parsePmTag, type PmMessageTag, type PmSummary, SESSION_ID } from '../shared/pm.ts';
 import { cleanPending, MAX_DISMISSED } from '../shared/pending.ts';
+import { MAX_TIMER_MS } from '../shared/timers.ts';
 import { readGitPending } from './pending-git.ts';
 import { pickSessionName } from './names.ts';
 import { sessionChanges } from './changes.ts';
@@ -48,8 +49,6 @@ const STATES: ReadonlySet<string> = new Set(['starting', 'work', 'perm', 'wait',
 const SAVE_DELAY_MS = 500;
 /** A session paused by the usage limit resumes this long after the reset, for claude.ai to have reset it too. */
 const LIMIT_RESUME_DELAY_MS = 60_000;
-/** The longest delay setTimeout keeps (2^31 - 1 ms): a later reset is looked at again after it. */
-const MAX_TIMER_MS = 2_147_483_647;
 /** A session in Remote Control keeps its process: those on by default leave this many live slots for the others to work in. */
 const REMOTE_FREE_SLOTS = 2;
 const MAX_COMMAND_DESCRIPTION = 200;

@@ -1,6 +1,7 @@
 // What a PM's Inbox shows above its message field (src/command/PmInbox.tsx), from its plan as the server sends it
 // (PmDetail): the questions waiting for the user, the tasks they block, what the last turn finished. Pure functions.
-import { asksShown, itemStatus, type PmAsk, type PmDetail, type PmFile, type PmItem } from '../../shared/pm.ts';
+import { asksShown, itemStatus, type PmAsk, type PmDetail, type PmItem } from '../../shared/pm.ts';
+import { planOf } from './pm-project.ts';
 
 export type InboxRow = { kind: 'ask'; ask: PmAsk } | { kind: 'blocked'; item: PmItem } | { kind: 'finished'; item: PmItem };
 
@@ -27,7 +28,7 @@ export interface Inbox {
  * tasks whose blocking question is not among them (snoozed); the tasks finished during its last turn or the one under way.
  */
 export function pmInbox(detail: PmDetail, now: number): Inbox {
-  const file: PmFile = { ...detail, reports: [] };
+  const file = planOf(detail);
   const shown = asksShown(file, now);
   const open = [...shown.open].sort((a, b) => a.createdAt - b.createdAt || a.no - b.no);
   const listed = (item: PmItem) => open.some((ask) => ask.item === item.no && ask.holds);

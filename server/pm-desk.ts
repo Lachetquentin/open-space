@@ -6,6 +6,7 @@ import {
   answerMessage, asksShown, type PmAsk, type PmDetail, type PmFile, type PmMessageTag, type PmSummary, pmSummary, typedAnswer, workerLive,
 } from '../shared/pm.ts';
 import type { ClientMessage, ServerMessage, SessionInfo } from '../shared/protocol.ts';
+import { MAX_TIMER_MS } from '../shared/timers.ts';
 import { st } from './i18n/index.ts';
 import type { PmBook } from './pm.ts';
 import { actsAsPm } from './pm-guards.ts';
@@ -33,9 +34,6 @@ export interface DeskDeps {
   setTimer?: (run: () => void, ms: number) => Timer;
   log?: (message: string, error: unknown) => void;
 }
-
-/** setTimeout fires at once past this delay: a later wake is waited for in steps. */
-const MAX_TIMER_MS = 2_147_483_647;
 
 const realTimer = (run: () => void, ms: number): Timer => {
   const timer = setTimeout(run, ms);

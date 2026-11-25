@@ -5,6 +5,7 @@
 import { use, useEffect, useState } from 'react';
 import { fullAskTag, itemTag, type PmAsk, type PmItem } from '../../shared/pm.ts';
 import type { PmDetail, SessionInfo } from '../../shared/protocol.ts';
+import { MAX_TIMER_MS } from '../../shared/timers.ts';
 import { t } from '../i18n/index.ts';
 import { resetLabel } from '../lib/format.ts';
 import { blockingAsks, inAnHour, type InboxRow, pmInbox, tomorrowMorning } from '../state/pm-inbox.ts';
@@ -14,9 +15,6 @@ import { CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, CopyIcon, InboxIcon, 
 import { ActionMenu } from './ModWindows.tsx';
 import { WindowCompactContext } from './useWindowDrag.ts';
 import { usePhone } from '../lib/phone.ts';
-
-/** setTimeout fires at once past this delay: a later wake is waited for in steps. */
-const LONGEST_TIMER = 2 ** 31 - 1;
 
 export function PmInbox({ session }: { session: SessionInfo }) {
   const detail = usePmDetail(session.pmSummary ? session.id : null);
@@ -32,7 +30,7 @@ export function PmInbox({ session }: { session: SessionInfo }) {
   const nextWake = inbox?.nextWake;
   useEffect(() => {
     if (nextWake === undefined) return;
-    const timer = setTimeout(() => wake((count) => count + 1), Math.min(LONGEST_TIMER, Math.max(0, nextWake - Date.now() + 50)));
+    const timer = setTimeout(() => wake((count) => count + 1), Math.min(MAX_TIMER_MS, Math.max(0, nextWake - Date.now() + 50)));
     return () => clearTimeout(timer);
   }, [nextWake]);
   // the PM's own AskUserQuestion is open by the field: that one first
