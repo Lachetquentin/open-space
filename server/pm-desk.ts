@@ -86,6 +86,8 @@ export class PmDesk {
 
   /** The PM's summary and plan sent again: its file changed, a worker moved, a snooze ended, its role changed. */
   refresh(pm: string): void {
+    // made an ordinary session again (pmRevert): no summary is asked of it any more, so its timer goes here
+    if (!this.lead(pm)) this.wake(pm, undefined);
     this.deps.republish(pm);
     if (![...this.watching.values()].some((pms) => pms.has(pm))) return;
     const detail = this.detail(pm);

@@ -170,4 +170,14 @@ describe('a question snoozed from the page', () => {
     assert.deepEqual(republished, [PM]);
     assert.equal(desk.summary(live.get(PM) as SessionInfo)?.asks, 1);
   });
+
+  it('loses its timer when the PM is made an ordinary session again', async () => {
+    const { desk, clock, live, timers, put, page } = await office();
+    await desk.handle({ t: 'pmAsk', pm: PM, ask: 1, action: 'snooze', until: clock.now + 60_000 }, page().send);
+    desk.summary(live.get(PM) as SessionInfo);
+    assert.equal(timers.filter((timer) => !timer.cleared).length, 1);
+    put(PM, { pm: undefined });
+    desk.refresh(PM);
+    assert.deepEqual(timers.filter((timer) => !timer.cleared), []);
+  });
 });
