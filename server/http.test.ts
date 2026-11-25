@@ -6,6 +6,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import vm from 'node:vm';
 import WebSocket from 'ws';
 import { createWebServer } from './http.ts';
 import { loopbackPolicy } from './security.ts';
@@ -116,6 +117,7 @@ before(async () => {
       handle: async (caller, body) => ({ status: 200, json: { caller, body } }),
     },
     mods: { kitDir, port: modsPort, key: (id) => `key-of-${id}`, file: (id, relative) => (id === 'ventes' ? resolveInside(modDir, relative || 'index.html') : null) },
+    pmPage: async (pm, page) => (pm === 'pm1' && page === 'a1' ? '<!doctype html><html lang="fr"><p>Pick one</p><input name="phone">' : null),
   });
   ({ server, hooksServer, modsServer } = created);
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
@@ -214,6 +216,22 @@ describe('HTTP requests', () => {
     assert.equal((await fetch(`${site}away.txt`)).status, 404, 'only a stored file');
     assert.equal((await fetch(`${site}missing.png`)).status, 404);
     assert.equal((await fetch(`http://127.0.0.1:${port}/pages/${'8'.repeat(64)}/`)).status, 404, 'no such bundle');
+  });
+
+  it('serves a PM’s live page to a paired browser only, behind its kit, sandboxed with no way out, asked again each time', async () => {
+    const page = `http://127.0.0.1:${port}/pm-pages/pm1/a1`;
+    assert.equal((await fetch(page)).status, 401);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/pm-pages/pm1/b2`, { headers: { Cookie: COOKIE } })).status, 404, 'a page it may not show');
+    const res = await fetch(page, { headers: { Cookie: COOKIE } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    const csp = (res.headers.get('content-security-policy') ?? '').split(/;\s*/);
+    for (const directive of ['sandbox allow-scripts', "default-src 'none'", "form-action 'none'", "frame-src 'none'", "frame-ancestors 'self'"]) assert.ok(csp.includes(directive), directive);
+    const body = await res.text();
+    assert.match(body, /^<!doctype html>(?!.*<!doctype).*<html lang="fr"><p>Pick one<\/p><input name="phone">$/is, 'the page after the kit, its own doctype dropped');
+    const scripts = [...body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+    assert.ok(scripts.some((script) => script.includes('pm.page.submit')), 'the kit sends the answers');
+    for (const script of scripts) assert.doesNotThrow(() => new vm.Script(script), 'the kit is valid JavaScript');
   });
 
   it('plays a video by ranges, as a browser asks for it', async () => {

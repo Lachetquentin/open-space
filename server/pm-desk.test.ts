@@ -7,7 +7,7 @@ import type { PmMessageTag } from '../shared/pm.ts';
 import type { ServerMessage, SessionInfo } from '../shared/protocol.ts';
 import { PmBook } from './pm.ts';
 import { PmDesk } from './pm-desk.ts';
-import { addAsk, linkWorker, remember } from './pm-ops.ts';
+import { addAsk, linkWorker, remember, retirePage, showPage } from './pm-ops.ts';
 import { newSessionInfo } from './session.ts';
 
 const base = mkdtempSync(path.join(os.tmpdir(), 'office-pm-desk-'));
@@ -202,5 +202,65 @@ describe('a question snoozed from the page', () => {
     put(PM, { pm: undefined });
     desk.refresh(PM);
     assert.deepEqual(timers.filter((timer) => !timer.cleared), []);
+  });
+});
+
+describe('a live page of a PM', () => {
+  /** The office, with page a1 shown about Q1, its HTML kept. */
+  async function withPage() {
+    const at = await office();
+    await at.book.change(PM, (file) => { showPage(file, { id: 'a1', title: 'Phone', source: 'phone', questions: ['Q1'] }, 100); });
+    await at.book.pages.write(PM, 'a1', '<input name="phone">');
+    return at;
+  }
+  /** The JSON between the fence tags of a message to the PM. */
+  const fencedJson = (text: string): unknown => JSON.parse(/<(pm-page-answers-\w+)>\n([\s\S]*)\n<\/\1>/.exec(text)?.[2] ?? 'null');
+
+  it('takes the first of two answers sent at once, and gives the PM those answers once, as JSON', async () => {
+    const { desk, book, delivered, page } = await withPage();
+    const { send } = page();
+    const sent = await Promise.allSettled([
+      desk.handle({ t: 'pmPage', pm: PM, page: 'a1', action: 'answer', answers: { phone: 'iPhone' } }, send),
+      desk.handle({ t: 'pmPage', pm: PM, page: 'a1', action: 'answer', answers: { phone: 'Android' } }, send),
+    ]);
+    assert.deepEqual(sent.map((one) => one.status), ['fulfilled', 'rejected']);
+    assert.deepEqual((await book.read(PM)).pages[0].answers, { phone: 'iPhone' });
+    assert.equal(delivered.length, 1);
+    assert.deepEqual(delivered[0].tag, { pageAnswer: { page: 'a1' } });
+    assert.deepEqual(fencedJson(delivered[0].text), { phone: 'iPhone' });
+  });
+
+  it('tells the PM once that the user saw it', async () => {
+    const { desk, book, delivered, page } = await withPage();
+    await desk.handle({ t: 'pmPage', pm: PM, page: 'a1', action: 'seen' }, page().send);
+    await assert.rejects(desk.handle({ t: 'pmPage', pm: PM, page: 'a1', action: 'seen' }, page().send));
+    assert.equal((await book.read(PM)).pages[0].state, 'seen');
+    assert.deepEqual(delivered.map((one) => one.tag), [{ pageSeen: { page: 'a1' } }]);
+  });
+
+  it('ignores what the user does with it while the setting is off or once the session is no PM', async () => {
+    const { desk, book, delivered, setting, put, page } = await withPage();
+    setting.enabled = false;
+    await desk.handle({ t: 'pmPage', pm: PM, page: 'a1', action: 'answer', answers: { phone: 'iPhone' } }, page().send);
+    setting.enabled = true;
+    put(PM, { pm: undefined });
+    await desk.handle({ t: 'pmPage', pm: PM, page: 'a1', action: 'seen' }, page().send);
+    assert.equal((await book.read(PM)).pages[0].state, 'open');
+    assert.deepEqual(delivered, []);
+  });
+
+  it('is served only while the setting is on, to a session that acts as a PM, until the PM retires it', async () => {
+    const { desk, book, setting, put } = await withPage();
+    assert.equal(await desk.pageHtml(PM, 'a1'), '<input name="phone">');
+    assert.equal(await desk.pageHtml(PM, 'b2'), null, 'no such page');
+    assert.equal(await desk.pageHtml(W, 'a1'), null, 'not its PM');
+    setting.enabled = false;
+    assert.equal(await desk.pageHtml(PM, 'a1'), null, 'setting off');
+    setting.enabled = true;
+    put(PM, { pm: undefined });
+    assert.equal(await desk.pageHtml(PM, 'a1'), null, 'no PM any more');
+    put(PM, { pm: true });
+    await book.change(PM, (file) => { retirePage(file, 'a1', 200); });
+    assert.equal(await desk.pageHtml(PM, 'a1'), null, 'retired, its file still there');
   });
 });

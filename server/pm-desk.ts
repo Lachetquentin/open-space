@@ -3,20 +3,21 @@
 // and for a session that acts as a PM (pm-guards.ts); otherwise it is ignored. The answer path (answer) is the one every
 // channel takes, so that a question takes one answer only and its PM hears it once.
 import {
-  answerMessage, asksShown, type PmAsk, type PmDetail, type PmFile, type PmMessageTag, type PmSummary, pmSummary, typedAnswer, workerLive,
+  answerMessage, asksShown, PAGE_ID, type PmAsk, type PmDetail, type PmFile, type PmMessageTag, type PmPage, type PmSummary, pmSummary, typedAnswer, workerLive,
 } from '../shared/pm.ts';
 import type { ClientMessage, ServerMessage, SessionInfo } from '../shared/protocol.ts';
 import { MAX_TIMER_MS } from '../shared/timers.ts';
+import { fenced } from './fence.ts';
 import { st } from './i18n/index.ts';
 import type { PmBook } from './pm.ts';
 import { actsAsPm } from './pm-guards.ts';
 import {
-  answerAsk, archiveItem, dismissAsk, editMemory, type Err, setInstructions, setMission, snoozeAsk, undoDismiss, wakeAsk,
+  answerAsk, answerPage, archiveItem, dismissAsk, editMemory, type Err, reopenPage, seePage, setInstructions, setMission, snoozeAsk, undoDismiss, wakeAsk,
 } from './pm-ops.ts';
 
 /** A page: where its messages go. One page is one key, kept until its socket closes (leave). */
 export type Viewer = (message: ServerMessage) => void;
-type PmRequest = Extract<ClientMessage, { t: 'pmWatch' | 'pmEdit' | 'pmAsk' | 'pmItemArchive' }>;
+type PmRequest = Extract<ClientMessage, { t: 'pmWatch' | 'pmEdit' | 'pmAsk' | 'pmItemArchive' | 'pmPage' }>;
 interface Timer { clear: () => void }
 
 export interface DeskDeps {
@@ -139,6 +140,7 @@ export class PmDesk {
     const now = this.deps.now();
     if (message.t === 'pmItemArchive') { refused(await this.deps.book.change(pm, (file) => archiveItem(file, message.item))); return; }
     if (message.t === 'pmEdit') { await this.edit(pm, message); return; }
+    if (message.t === 'pmPage') { refused(await this.page(pm, message)); return; }
     const { ask } = message;
     switch (message.action) {
       case 'answer': refused(await this.answer(pm, ask, message.answer ?? '')); return;
@@ -169,6 +171,35 @@ export class PmDesk {
       const typed = typedAnswer(file, text);
       if (typed) answerAsk(file, typed.ask, typed.answer, this.deps.now());
     });
+  }
+
+  /**
+   * The HTML of a live page, for the route that serves it (server/http.ts): while the setting is on, the session acts as a
+   * PM and the page is in its plan, not retired; null otherwise.
+   */
+  async pageHtml(pm: string, page: string): Promise<string | null> {
+    if (!PAGE_ID.test(page) || !this.lead(pm)) return null;
+    const file = this.deps.book.cached(pm) ?? await this.deps.book.read(pm);
+    const shown = file.pages.find((one) => one.id === page);
+    return shown && shown.state !== 'retired' ? this.deps.book.pages.read(pm, page) : null;
+  }
+
+  /**
+   * What the user does with a live page: its answers or "seen" are written in the PM's file, then the PM hears them once;
+   * a page no longer open (answered first from another window, replaced, retired) gives an error and nothing is sent.
+   */
+  private async page(pm: string, request: Extract<PmRequest, { t: 'pmPage' }>): Promise<PmPage | Err> {
+    const { page, action } = request;
+    const now = this.deps.now();
+    if (action === 'reopen') return this.deps.book.change(pm, (file) => reopenPage(file, page));
+    const settled = await this.deps.book.change(pm, (file) => (action === 'answer' ? answerPage(file, page, request.answers, now) : seePage(file, page, now)));
+    if ('error' in settled) return settled;
+    if (action === 'seen') this.tell(pm, st.pm.pageSeen(settled.title, page), { pageSeen: { page } });
+    else {
+      const words = fenced('pm-page-answers', (tag) => st.pm.pageAnswers(settled.title, page, settled.questions.join(' '), tag), JSON.stringify(settled.answers ?? null, null, 2));
+      this.tell(pm, words, { pageAnswer: { page } });
+    }
+    return settled;
   }
 
   /** The user changes the mission, the instructions or a note: the PM is told in one message, when something changed. */

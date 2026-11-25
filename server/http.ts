@@ -17,6 +17,7 @@ import { isModId, PHONE_MODS_PORT } from '../shared/mods.ts';
 import { TESTERS } from './browser.ts';
 import { MAX_HOOK_BODY, type TriggerRunOutcome } from '../shared/triggers.ts';
 import { MAX_MCP_BODY, type Caller } from './mcp.ts';
+import { PM_PAGE_CSP, pageDocument } from './pm-pages.ts';
 
 /** The file types served: the compiled UI's, and what sessions send or publish. */
 const TYPES: Record<string, string> = {
@@ -53,6 +54,8 @@ export interface WebServerOptions {
   };
   /** the triggers' webhooks (server/triggers.ts): fires the trigger whose id and token match, with the body as data */
   hooks?: (id: string, token: string, body: string) => Promise<TriggerRunOutcome | 'unknown'>;
+  /** a PM's live page as its PM wrote it (server/pm-desk.ts pageHtml), null when it may not be shown */
+  pmPage?: (pm: string, page: string) => Promise<string | null>;
   /** the open-space MCP server (server/mcp.ts) */
   mcp?: {
     /** a session's key, and whether the session exists */
@@ -246,6 +249,23 @@ export function createWebServer(options: WebServerOptions) {
       'Cache-Control': 'private, max-age=31536000, immutable',
       ...(name.endsWith('.svg') ? { 'Content-Security-Policy': SVG_CSP } : {}),
     });
+  }
+
+  /**
+   * GET /pm-pages/<pm>/<page>: a PM's live page, in Open Space's window (an iframe sandboxed without allow-same-origin) or
+   * opened on its own, to a browser holding the session cookie. Its kit before it, its policy with it (PM_PAGE_CSP: its
+   * sandbox is there even outside the iframe); asked again each time, since a page is answered and retired.
+   */
+  async function servePmPage(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
+    if (!hasSessionCookie(policy, req)) { res.writeHead(401).end(); return; }
+    const [pm = '', page = '', ...rest] = url.pathname.slice('/pm-pages/'.length).split('/');
+    const html = options.pmPage && req.method === 'GET' && !rest.length ? await options.pmPage(pm, page) : null;
+    if (html === null) { res.writeHead(404, { 'Cache-Control': 'no-store' }).end(); return; }
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
+      'Content-Security-Policy': PM_PAGE_CSP, 'Referrer-Policy': 'no-referrer',
+    });
+    res.end(pageDocument(html));
   }
 
   /**
@@ -457,6 +477,7 @@ export function createWebServer(options: WebServerOptions) {
       return;
     }
     if (url.pathname.startsWith('/pages/')) { await servePage(req, res, url); return; }
+    if (url.pathname.startsWith('/pm-pages/')) { await servePmPage(req, res, url); return; }
     if (url.pathname.startsWith('/browser/')) { await serveBrowser(req, res, url); return; }
     if (url.pathname.startsWith('/secrets/')) { await serveSecrets(req, res, url); return; }
     if (url.pathname.startsWith('/sounds/')) {
