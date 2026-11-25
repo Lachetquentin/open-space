@@ -654,7 +654,7 @@ export class Messengers {
     return trigger?.messengers.includes(bot.id) ? { done: trigger.notifyDone } : null;
   }
 
-  /** Tells each linked bot what changed in the sessions it follows. */
+  /** Tells each linked bot what changed in the sessions it follows, and every PM's questions but those it unfollowed. */
   async tick() {
     const sessions = this.deps.sessions();
     const triggers = this.deps.triggers();
@@ -663,14 +663,16 @@ export class Messengers {
       const pending = new Set<string>();
       for (const session of sessions) {
         const follow = this.follows(bot, session, triggers);
-        if (!follow) continue;
-        for (const wait of session.permissions) {
-          const key = `${bot.id}|${session.id}|${wait.requestId}`;
-          pending.add(key);
-          if (!this.sent.has(key)) await this.sendWait(bot, session, wait, key);
+        if (follow) {
+          for (const wait of session.permissions) {
+            const key = `${bot.id}|${session.id}|${wait.requestId}`;
+            pending.add(key);
+            if (!this.sent.has(key)) await this.sendWait(bot, session, wait, key);
+          }
         }
-        await this.sendPmAsks(bot, session);
-        await this.news(bot, session, follow.done);
+        // a PM's questions reach every linked chat, followed or not, unless it unfollowed that PM
+        if (this.forced.get(`${bot.id}|${session.id}`) !== false) await this.sendPmAsks(bot, session);
+        if (follow) await this.news(bot, session, follow.done);
       }
       for (const key of [...this.sent.keys()]) {
         if (!key.startsWith(`${bot.id}|`) || pending.has(key)) continue;

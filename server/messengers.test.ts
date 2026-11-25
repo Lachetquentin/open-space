@@ -395,8 +395,11 @@ describe('keys given by replying to the bot', () => {
 describe('a PM’s questions on Telegram', () => {
   const PM = 'pm-1';
 
-  /** A linked bot following a PM whose Q1 offers two answers (the second recommended), with a real PmDesk: what leaves is kept. */
-  async function pmOffice(file: string) {
+  /**
+   * A bot following every session (`allSessions`), linked to a chat unless `linked` is false, and a PM whose Q1 offers
+   * two answers (the second recommended), with a real PmDesk: what leaves is kept.
+   */
+  async function pmOffice(file: string, { allSessions = true, linked = true } = {}) {
     const fake = fakeTelegram();
     const setting = { enabled: true };
     const delivered: string[] = [];
@@ -419,9 +422,11 @@ describe('a PM’s questions on Telegram', () => {
       pm: { enabled: () => setting.enabled, file: (pm) => { reads.push(pm); return book.cached(pm); }, answer: (pm, ask, answer) => desk.answer(pm, ask, answer) },
     };
     const messengers = new Messengers(deps);
-    messengers.save(undefined, { name: 'Phone', token: TOKEN, allSessions: true, model: '' });
-    fake.message(`/start ${messengers.list()[0]!.linkCode}`);
-    await until(() => messengers.list()[0]!.linked).catch((error: unknown) => { messengers.stop(); throw error; });
+    messengers.save(undefined, { name: 'Phone', token: TOKEN, allSessions, model: '' });
+    if (linked) {
+      fake.message(`/start ${messengers.list()[0]!.linkCode}`);
+      await until(() => messengers.list()[0]!.linked).catch((error: unknown) => { messengers.stop(); throw error; });
+    }
     const asked = () => fake.sent('sendMessage').filter((each) => String(each.body.text).includes('Which phone?'));
     const buttons = (call: { body: Record<string, unknown> }) => (call.body.reply_markup as { inline_keyboard: telegram.Button[][] }).inline_keyboard.flat();
     /** a tap on the button of `answer` of the question's message */
@@ -452,6 +457,40 @@ describe('a PM’s questions on Telegram', () => {
       const marked = labels.filter((label) => label !== 'iPhone' && label !== 'Android');
       assert.equal(marked.length, 1, 'only the recommended answer is marked');
       assert.ok(marked[0]!.includes('Android'), 'the mark keeps the recommended answer');
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('sends a PM’s question, once, to a linked chat that does not follow that PM', async () => {
+    const { messengers, asked } = await pmOffice('pm-unfollowed-yet.json', { allSessions: false });
+    try {
+      await messengers.tick();
+      await messengers.tick();
+      assert.equal(asked().length, 1);
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('sends nothing of a PM to a chat that unfollowed it', async () => {
+    const { fake, messengers, asked } = await pmOffice('pm-unfollow.json');
+    try {
+      const before = fake.sent('sendMessage').length;
+      fake.message('/unfollow chef');
+      await until(() => fake.sent('sendMessage').length > before);
+      await messengers.tick();
+      assert.equal(asked().length, 0);
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('sends a PM’s question to no bot without a chat', async () => {
+    const { messengers, asked } = await pmOffice('pm-no-chat.json', { linked: false });
+    try {
+      await messengers.tick();
+      assert.equal(asked().length, 0);
     } finally {
       messengers.stop();
     }
