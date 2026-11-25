@@ -232,6 +232,11 @@ function guard(contents: Electron.WebContents) {
     event.preventDefault();
     openOutside(url);
   });
+  // a live PM page runs scripts: it must not send its own frame (and what the user typed in it) to an outside address
+  contents.on('will-frame-navigate', (details) => {
+    const pages = `${address}/pm-pages/`;
+    if (!details.isMainFrame && details.frame?.url.startsWith(pages) && !details.url.startsWith(pages)) details.preventDefault();
+  });
 }
 
 /** The key of a window taken out, from its page's address (/?out=<key>); null for any other address. */
