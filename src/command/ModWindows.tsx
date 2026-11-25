@@ -5,7 +5,6 @@ import { readPreference, writePreference } from '../lib/preferences.ts';
 import { modSlot } from '../state/docking.ts';
 import { MOD_HEAD, modBox, modPlacementKey as placementKey, NOT_PLACED, openingSpots, resizeMod, type ModPlacement } from '../state/mods.ts';
 import { outKey } from '../state/out.ts';
-import { placePip } from '../state/pip.ts';
 import type { Box } from '../state/room-frame.ts';
 import { useSessions } from '../state/sessions.ts';
 import type { Edge } from '../state/windows.ts';
@@ -16,11 +15,9 @@ import { ChevronDownIcon, ChevronUpIcon, CloseIcon, MOD_ICONS, MoreIcon, PopOutI
 import { useDismiss } from './useDismiss.ts';
 import { useMenuBelow } from './useMenuBelow.ts';
 import { OutControls } from './OutControls.tsx';
+import { useFreeCarry } from './useFreeCarry.ts';
 import { useModPage } from './useModPage.tsx';
 import { INTERACTIVE } from './useWindowDrag.ts';
-
-/** how far a press on the title bar goes before it carries the window */
-const CARRY_AFTER = 4;
 
 /** The mods' windows over the office, in the order they were last touched: the last one on top. */
 export function ModWindows() {
@@ -69,9 +66,16 @@ export function ModWindow({ mod, depth, spot, detached = false }: { mod: ModInfo
   // `fit`: the height its page says its content needs; the window fits it until the user resizes it, and is never taller
   const box = modBox(mod, placement, spot, floatingSurface(), fit);
   const place = (next: ModPlacement) => { setPlacement(next); writePreference(placementKey(mod.id), next); };
-  const carried = useRef<{ start: Box; x: number; y: number; edge: Edge | null; started: boolean } | null>(null);
-  const [moving, setMoving] = useState(false);
   const [moved, setMoved] = useState<Box | null>(null);
+  const free = useFreeCarry(box, {
+    resize: (start, edge, dx, dy) => resizeMod(start, edge, dx, dy, floatingSurface(), fit),
+    move: setMoved,
+    drop: (edge) => {
+      if (!moved) return;
+      setMoved(null);
+      place({ ...placement, left: moved.left, top: moved.top, size: edge ? { width: moved.width, height: moved.height - MOD_HEAD } : placement.size });
+    },
+  });
   const ownBox = moved ?? box;
   const shownBox = lifted ?? (docked && slot ? slot : ownBox);
 
@@ -102,27 +106,7 @@ export function ModWindow({ mod, depth, spot, detached = false }: { mod: ModInfo
     openMod(mod.id);
     // carried by the stack (which docks and undocks it) while it can move windows, else on its own
     if (!edge && carry) { carry(modSlot(mod.id), event); return; }
-    carried.current = { start: box, x: event.clientX, y: event.clientY, edge, started: false };
-  };
-  const drag = (event: ReactPointerEvent<HTMLElement>) => {
-    const from = carried.current;
-    if (!from) return;
-    const dx = event.clientX - from.x, dy = event.clientY - from.y;
-    if (!from.started) {
-      if (!from.edge && Math.hypot(dx, dy) < CARRY_AFTER) return;
-      from.started = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setMoving(true);
-    }
-    setMoved(from.edge ? resizeMod(from.start, from.edge, dx, dy, floatingSurface(), fit) : placePip({ ...from.start, left: from.start.left + dx, top: from.start.top + dy }, floatingSurface()));
-  };
-  const drop = () => {
-    const from = carried.current;
-    carried.current = null;
-    if (!from?.started || !moved) return;
-    setMoving(false);
-    setMoved(null);
-    place({ ...placement, left: moved.left, top: moved.top, size: from.edge ? { width: moved.width, height: moved.height - MOD_HEAD } : placement.size });
+    free.grab(edge, event);
   };
 
   const Icon = MOD_ICONS[mod.icon];
@@ -135,10 +119,10 @@ export function ModWindow({ mod, depth, spot, detached = false }: { mod: ModInfo
   // the same title bar as a session's window: its own actions, then out of Open Space, then close
   return (
     <section
-      className="cp-mod" aria-label={words.windowLabel(mod.name)} data-folded={folded} data-building={mod.draft} data-moving={moving || !!lifted} data-detached={detached || undefined}
+      className="cp-mod" aria-label={words.windowLabel(mod.name)} data-folded={folded} data-building={mod.draft} data-moving={free.moving || !!lifted} data-detached={detached || undefined}
       data-docked={(docked && !!slot) || undefined} data-covered={(docked && !!slot && covered) || undefined} data-carried={!!lifted || undefined}
       style={detached ? undefined : ({ ...boxVariables(shownBox), '--depth': depth } as CSSProperties)}
-      {...(detached ? {} : { onPointerMove: drag, onPointerUp: drop, onPointerCancel: drop, onPointerDownCapture: () => openMod(mod.id) })}
+      {...(detached ? {} : { onPointerMove: free.drag, onPointerUp: free.drop, onPointerCancel: free.drop, onPointerDownCapture: () => openMod(mod.id) })}
     >
       <header className="cp-mod__head" onPointerDown={(event) => { if (!detached) grab(null, event); }} onDoubleClick={(event) => { if (!detached && !docked && !(event.target as HTMLElement).closest(INTERACTIVE)) fold(); }}>
         <span className="cp-mod__icon"><Icon /></span>

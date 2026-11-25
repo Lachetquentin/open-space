@@ -10,7 +10,6 @@ import { readPreference, writePreference } from '../lib/preferences.ts';
 import { MOD_HEAD, modBox, NOT_PLACED, openingSpots, resizeMod, type ModPlacement } from '../state/mods.ts';
 import { pageSubmission, pageView, pmPageUrl, type PageView } from '../state/pm-pages.ts';
 import { closePmPage, openPmPage, usePmPageWindow } from '../state/pm.ts';
-import { placePip } from '../state/pip.ts';
 import type { Box } from '../state/room-frame.ts';
 import { useSessions } from '../state/sessions.ts';
 import { usePmDetail } from '../state/usePmDetail.ts';
@@ -18,6 +17,7 @@ import type { Edge } from '../state/windows.ts';
 import { boxVariables, floatingSurface } from './boxes.ts';
 import { FreeHandles } from './FreeHandles.tsx';
 import { ChevronDownIcon, ChevronUpIcon, CloseIcon, PmPageIcon } from './Icons.tsx';
+import { useFreeCarry } from './useFreeCarry.ts';
 import { currentTheme, onThemeChange } from './useModPage.tsx';
 import { INTERACTIVE } from './useWindowDrag.ts';
 
@@ -25,8 +25,6 @@ import { INTERACTIVE } from './useWindowDrag.ts';
 const SIZE = { width: 520, height: 600 };
 /** where the user left it, in this browser: the same place for every page */
 const PLACEMENT = 'pm-page-placement';
-/** how far a press on the title bar goes before it carries the window */
-const CARRY_AFTER = 4;
 /** loaded without its kit saying it is there: the server did not serve the page (gone, the setting off) */
 const READY_GRACE_MS = 1500;
 /** how long answers sent wait for the plan to say the page answered before the page can send again (a refusal changes nothing) */
@@ -54,8 +52,16 @@ function PageWindow({ pm, asked }: { pm: string; asked: string }) {
   const spot = openingSpots([SIZE], floatingSurface())[0];
   const box = modBox(SIZE, placement, spot, floatingSurface());
   const place = (next: ModPlacement) => { setPlacement(next); writePreference(PLACEMENT, next); };
-  const carried = useRef<{ start: Box; x: number; y: number; edge: Edge | null; started: boolean } | null>(null);
   const [moved, setMoved] = useState<Box | null>(null);
+  const free = useFreeCarry(box, {
+    resize: (start, edge, dx, dy) => resizeMod(start, edge, dx, dy, floatingSurface()),
+    move: setMoved,
+    drop: (edge) => {
+      if (!moved) return;
+      setMoved(null);
+      place({ ...placement, left: moved.left, top: moved.top, size: edge ? { width: moved.width, height: moved.height - MOD_HEAD } : placement.size });
+    },
+  });
   const shownBox = moved ?? box;
   const folded = placement.folded;
 
@@ -68,25 +74,7 @@ function PageWindow({ pm, asked }: { pm: string; asked: string }) {
 
   const grab = (edge: Edge | null, event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (!edge && (event.target as HTMLElement).closest(INTERACTIVE))) return;
-    carried.current = { start: box, x: event.clientX, y: event.clientY, edge, started: false };
-  };
-  const drag = (event: ReactPointerEvent<HTMLElement>) => {
-    const from = carried.current;
-    if (!from) return;
-    const dx = event.clientX - from.x, dy = event.clientY - from.y;
-    if (!from.started) {
-      if (!from.edge && Math.hypot(dx, dy) < CARRY_AFTER) return;
-      from.started = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
-    setMoved(from.edge ? resizeMod(from.start, from.edge, dx, dy, floatingSurface()) : placePip({ ...from.start, left: from.start.left + dx, top: from.start.top + dy }, floatingSurface()));
-  };
-  const drop = () => {
-    const from = carried.current;
-    carried.current = null;
-    if (!from?.started || !moved) return;
-    setMoved(null);
-    place({ ...placement, left: moved.left, top: moved.top, size: from.edge ? { width: moved.width, height: moved.height - MOD_HEAD } : placement.size });
+    free.grab(edge, event);
   };
   const fold = () => place({ ...placement, folded: !placement.folded });
 
@@ -155,7 +143,7 @@ function PageWindow({ pm, asked }: { pm: string; asked: string }) {
     <section
       className="cp-mod cp-pm-page" aria-label={words.windowLabel(shown?.title ?? '')} data-folded={folded} data-moving={!!moved || undefined}
       style={boxVariables(shownBox)}
-      onPointerMove={drag} onPointerUp={drop} onPointerCancel={drop}
+      onPointerMove={free.drag} onPointerUp={free.drop} onPointerCancel={free.drop}
     >
       <header className="cp-mod__head" onPointerDown={(event) => grab(null, event)} onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest(INTERACTIVE)) fold(); }}>
         <span className="cp-mod__icon"><PmPageIcon /></span>

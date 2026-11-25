@@ -12,10 +12,9 @@ import { boxVariables, floatingSurface } from './boxes.ts';
 import { FreeHandles } from './FreeHandles.tsx';
 import { ChevronDownIcon, ChevronUpIcon, CloseIcon, MaximizeIcon, PopOutIcon } from './Icons.tsx';
 import { OutControls } from './OutControls.tsx';
+import { useFreeCarry } from './useFreeCarry.ts';
 import { INTERACTIVE } from './useWindowDrag.ts';
 
-/** how far a press on its title bar goes before it carries the window rather than clicking a name */
-const CARRY_AFTER = 4;
 /** where the user left it, and folded or not */
 interface Placement { box: Box | null; folded: boolean }
 
@@ -57,8 +56,12 @@ function Pip({ session, lane }: { session: SessionInfo; lane: number }) {
   const [placement, setPlacement] = useState<Placement>(() => readPreference<Placement>('pip-placement', { box: null, folded: false }));
   const box = placement.box ?? fitPip(null, format, floatingSurface());
   const place = (next: Placement) => { setPlacement(next); writePreference('pip-placement', next); };
-  const carried = useRef<{ start: Box; x: number; y: number; edge: Edge | null; started: boolean } | null>(null);
-  const [moving, setMoving] = useState(false);
+  // where it is written at each move, and kept in the browser once let go
+  const free = useFreeCarry(box, {
+    resize: (start, edge, dx, dy) => resizePip(start, edge, dx, dy, format, floatingSurface()),
+    move: (next) => setPlacement((now) => ({ ...now, box: next })),
+    drop: () => setPlacement((now) => { writePreference('pip-placement', now); return now; }),
+  });
 
   // a new format: the page's proportions change, the window follows
   const fitted = useRef(format);
@@ -79,34 +82,14 @@ function Pip({ session, lane }: { session: SessionInfo; lane: number }) {
   const grab = (edge: Edge | null, event: ReactPointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (event.button !== 0 || (!edge && target.closest(INTERACTIVE) && !target.closest('.cp-pip__lanes'))) return;
-    carried.current = { start: box, x: event.clientX, y: event.clientY, edge, started: false };
-  };
-  const drag = (event: ReactPointerEvent<HTMLElement>) => {
-    const from = carried.current;
-    if (!from) return;
-    const dx = event.clientX - from.x, dy = event.clientY - from.y;
-    if (!from.started) {
-      if (!from.edge && Math.hypot(dx, dy) < CARRY_AFTER) return;
-      from.started = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setMoving(true);
-    }
-    const next = from.edge ? resizePip(from.start, from.edge, dx, dy, format, floatingSurface()) : placePip({ ...from.start, left: from.start.left + dx, top: from.start.top + dy }, floatingSurface());
-    setPlacement((now) => ({ ...now, box: next }));
-  };
-  const drop = () => {
-    const from = carried.current;
-    carried.current = null;
-    if (!from?.started) return;
-    setMoving(false);
-    setPlacement((now) => { writePreference('pip-placement', now); return now; });
+    free.grab(edge, event);
   };
 
   return (
     <section
-      className="cp-pip" aria-label={words.pipLabel(session.name)} data-folded={placement.folded} data-moving={moving}
+      className="cp-pip" aria-label={words.pipLabel(session.name)} data-folded={placement.folded} data-moving={free.moving}
       style={boxVariables(box)}
-      onPointerMove={drag} onPointerUp={drop} onPointerCancel={drop}
+      onPointerMove={free.drag} onPointerUp={free.drop} onPointerCancel={free.drop}
     >
       <header className="cp-pip__head" onPointerDown={(event) => grab(null, event)} onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest(INTERACTIVE)) place({ ...placement, folded: !placement.folded }); }}>
         <div className="cp-browser__lanes cp-pip__lanes" role="tablist" aria-label={words.lanes}>
