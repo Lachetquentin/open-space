@@ -4,9 +4,12 @@
 const ITEM_STATES = ['moving', 'waiting', 'needs', 'later', 'finished', 'dropped'] as const;
 const ASK_STATES = ['open', 'answered', 'done', 'withdrawn', 'dismissed'] as const;
 const REPORT_KINDS = ['finished', 'waiting', 'quiet', 'stopped', 'error', 'paused', 'restarted'] as const;
+const PAGE_STATES = ['open', 'answered', 'seen', 'replaced', 'retired'] as const;
 export type ItemState = (typeof ITEM_STATES)[number];
 export type AskState = (typeof ASK_STATES)[number];
 export type ReportKind = (typeof REPORT_KINDS)[number];
+/** open: waits for the user; answered or seen: settled by the user; replaced: by a page of the same source; retired: by the PM. */
+export type PageState = (typeof PAGE_STATES)[number];
 export interface PmStep { text: string; done: boolean; chore: boolean; at: number }
 export interface PmWait { on: 'item' | 'ask' | 'text'; ref: string; since: number; cleared?: number }
 export interface PmLink { url: string; kind: 'pr' | 'issue' | 'url'; title: string; worker?: string }
@@ -25,16 +28,31 @@ export interface PmWorker {
   watch: { quietSince?: number; stopAsked?: number };
 }
 export interface PmReportRecord { key: string; worker: string; kind: ReportKind; at: number }
+/**
+ * A live page a PM shows the user (pm_page_show), its HTML kept apart (server/pm-pages.ts). `source`: the PM's name for
+ * what it shows, a new page of the same source replacing the one still open (`replacedBy`); `questions`: the tags of the
+ * questions it is about ("Q4"); `answers`: what the user sent from it, as JSON.
+ */
+export interface PmPage {
+  id: string; item?: number; source: string; title: string; questions: string[]; state: PageState; answers?: unknown; replacedBy?: string;
+  createdAt: number; settledAt?: number;
+}
 export interface PmFile {
   version: 1; mission: string; instructions: string; nextItem: number; nextAsk: number; turn: number;
-  memory: { text: string; at: number }[]; items: PmItem[]; asks: PmAsk[]; workers: PmWorker[]; reports: PmReportRecord[];
-  // kept as stored until live pages exist
-  pages: unknown[];
+  memory: { text: string; at: number }[]; items: PmItem[]; asks: PmAsk[]; workers: PmWorker[]; reports: PmReportRecord[]; pages: PmPage[];
 }
 
 export const PM_LIMITS = {
   memory: 60, note: 600, title: 200, detail: 4000, answers: 6, answer: 80, line: 300, steps: 30, reports: 200, mission: 2000, instructions: 4000, url: 2000,
+  /** the pages kept per PM (the oldest go first), the size of a page's HTML and of the answers sent from it, in bytes */
+  pages: 20, pageBytes: 2 * 1024 * 1024, pageAnswerBytes: 64 * 1024,
 } as const;
+
+/** A page's id: also the name of its HTML file. */
+export const PAGE_ID = /^[a-z0-9]{1,32}$/;
+export const PM_PAGE_ACTIONS = ['answer', 'seen', 'reopen'] as const;
+/** What the user does with a page: answers it, says they saw it (nothing to answer), or opens a settled one again to answer anew. */
+export type PmPageAction = (typeof PM_PAGE_ACTIONS)[number];
 
 /** How much of a worker's last reply follows its report, and pm_worker_read shows by default, in characters. */
 export const REPORT_WORDS = 3000;
@@ -43,7 +61,7 @@ export const REPORT_WORDS = 3000;
 export const PM_TOOL_NAMES = [
   'pm_status', 'pm_set_mission', 'pm_set_instructions', 'pm_remember', 'pm_forget', 'pm_item_add', 'pm_item_update', 'pm_item_list',
   'pm_ask', 'pm_ask_done', 'pm_ask_withdraw', 'pm_link_add', 'pm_worker_start', 'pm_worker_link', 'pm_worker_unlink', 'pm_worker_resolve',
-  'pm_worker_send', 'pm_worker_read', 'pm_worker_stop',
+  'pm_worker_send', 'pm_worker_read', 'pm_worker_stop', 'pm_page_show', 'pm_page_retire',
 ] as const;
 
 /**
@@ -71,22 +89,36 @@ export const PM_TOOL_USAGE: Record<(typeof PM_TOOL_NAMES)[number], string> = {
   pm_worker_send: 'pm_worker_send({ session | item, text })',
   pm_worker_read: 'pm_worker_read({ session | item, last? })',
   pm_worker_stop: 'pm_worker_stop({ session | item })',
+  pm_page_show: 'pm_page_show({ html, title, source, item?, questions?: [tag] })',
+  pm_page_retire: 'pm_page_retire({ page })',
 };
 
 /**
- * What a message sent to a PM by Open Space is: a worker's report, the user's answer to a question, the PM's setup, or
- * the note of what the user changed in its plan from the page (mission, instructions, memory).
+ * What a message sent to a PM by Open Space is: a worker's report, the user's answer to a question, the PM's setup, the
+ * note of what the user changed in its plan from the page (mission, instructions, memory), the answers sent from one of
+ * its live pages, or the note that the user saw one.
  */
-export type PmMessageTag = { report: { worker: string; kind: ReportKind } } | { answer: { ask: number } } | { setup: true } | { change: true };
+export type PmMessageTag =
+  | { report: { worker: string; kind: ReportKind } } | { answer: { ask: number } } | { setup: true } | { change: true }
+  | { pageAnswer: { page: string } } | { pageSeen: { page: string } };
+export type PmMessageKind = 'report' | 'answer' | 'setup' | 'change' | 'pageAnswer' | 'pageSeen';
 
 /** What a message to a PM is by its tag; null for an ordinary message. */
-export function pmMessageKind(tag: PmMessageTag | undefined): 'report' | 'answer' | 'setup' | 'change' | null {
+export function pmMessageKind(tag: PmMessageTag | undefined): PmMessageKind | null {
   if (!tag) return null;
-  return 'report' in tag ? 'report' : 'answer' in tag ? 'answer' : 'change' in tag ? 'change' : 'setup';
+  if ('report' in tag) return 'report';
+  if ('answer' in tag) return 'answer';
+  if ('change' in tag) return 'change';
+  if ('pageAnswer' in tag) return 'pageAnswer';
+  if ('pageSeen' in tag) return 'pageSeen';
+  return 'setup';
 }
 
-/** Written by Open Space (a PM's setup, a worker's report, the note of a change), not by the user: an answer is the user's own words. */
-export const fromOpenSpace = (tag: PmMessageTag | undefined): boolean => { const kind = pmMessageKind(tag); return kind === 'setup' || kind === 'report' || kind === 'change'; };
+/**
+ * Written by Open Space (a PM's setup, a worker's report, the note of a change, a page's answers wrapped as data, the
+ * note of a page seen), not by the user: an answer is the user's own words.
+ */
+export const fromOpenSpace = (tag: PmMessageTag | undefined): boolean => { const kind = pmMessageKind(tag); return kind !== null && kind !== 'answer'; };
 
 /** The PM settings (Preferences.pm): off, no PM tools nor reports; `quietMinutes` of silence before a worker is nudged. */
 export interface PmSettings { enabled: boolean; quietMinutes: number; lastModel?: string }
@@ -159,6 +191,17 @@ const parseAsk = (raw: Raw): PmAsk | undefined => {
   };
 };
 
+const parsePage = (raw: Raw): PmPage | undefined => {
+  const id = typeof raw.id === 'string' && PAGE_ID.test(raw.id) ? raw.id : undefined;
+  const questions = (Array.isArray(raw.questions) ? raw.questions : []).filter((tag): tag is string => typeof tag === 'string' && /^Q[1-9]\d{0,8}$/.test(tag));
+  return id === undefined ? undefined : {
+    id, ...optional('item', number(raw.item)), source: text(raw.source, PM_LIMITS.title), title: text(raw.title, PM_LIMITS.title), questions,
+    state: oneOf(raw.state, PAGE_STATES) ?? 'open', ...(raw.answers === undefined ? {} : { answers: raw.answers }),
+    ...optional('replacedBy', typeof raw.replacedBy === 'string' && PAGE_ID.test(raw.replacedBy) ? raw.replacedBy : undefined),
+    createdAt: time(raw.createdAt), ...optional('settledAt', time(raw.settledAt)),
+  };
+};
+
 const parseReport = (raw: Raw): PmWorker['lastReport'] => {
   const kind = oneOf(raw.kind, REPORT_KINDS);
   return kind && { kind, at: time(raw.at), line: text(raw.line, PM_LIMITS.line), seq: count(raw.seq), ...optional('turns', count(raw.turns)) };
@@ -179,6 +222,10 @@ export function parsePmTag(raw: unknown): PmMessageTag | undefined {
   if (!isRaw(raw)) return undefined;
   if (raw.setup === true) return { setup: true };
   if (raw.change === true) return { change: true };
+  for (const key of ['pageAnswer', 'pageSeen'] as const) {
+    const page = isRaw(raw[key]) ? raw[key].page : undefined;
+    if (page !== undefined) return typeof page === 'string' && PAGE_ID.test(page) ? ({ [key]: { page } } as PmMessageTag) : undefined;
+  }
   if (isRaw(raw.report)) {
     const worker = session(raw.report.worker);
     const kind = oneOf(raw.report.kind, REPORT_KINDS);
@@ -207,7 +254,8 @@ export function parsePmFile(raw: unknown): PmFile {
     memory: list(raw.memory, (note) => (typeof note.text === 'string' && note.text ? { text: text(note.text, PM_LIMITS.note), at: time(note.at) } : undefined)).slice(0, PM_LIMITS.memory),
     items, asks, workers: firstOfEach(list(raw.workers, parseWorker), (worker) => worker.session),
     reports: list(raw.reports, parseReportRecord).slice(-PM_LIMITS.reports),
-    pages: Array.isArray(raw.pages) ? raw.pages : [],
+    // the newest pages, as many as a PM keeps
+    pages: firstOfEach(list(raw.pages, parsePage), (page) => page.id).slice(-PM_LIMITS.pages),
   };
 }
 

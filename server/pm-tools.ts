@@ -4,14 +4,17 @@
 // Every change goes through the PM's file (server/pm.ts, server/pm-ops.ts); each result ends with the questions the user
 // set aside since the PM last heard, as a second text block.
 // mcp.ts imports this file's values: what comes from it is only used inside functions, once both are loaded.
-import { askTag, fullAskTag, itemStatus, itemTag, type PmFile, type PmItem, PM_TOOL_NAMES, PM_TOOL_USAGE, parseTag, REPORT_WORDS, type WorkerLive, workerLive } from '../shared/pm.ts';
+import { randomBytes } from 'node:crypto';
+import {
+  askTag, fullAskTag, itemStatus, itemTag, PM_LIMITS, PM_TOOL_NAMES, PM_TOOL_USAGE, type PmFile, type PmItem, parseTag, REPORT_WORDS, type WorkerLive, workerLive,
+} from '../shared/pm.ts';
 import { EFFORTS, type SessionInfo } from '../shared/protocol.ts';
 import { st } from './i18n/index.ts';
 import { asArray, asString, type Json } from './json.ts';
 import { failure, type OpenSpaceApi, type PmApi, shownWait, type Tool, text } from './mcp.ts';
 import {
-  addAsk, addItem, addLink, dismissedNotice, type Err, forget, type ItemUpdate, linkWorker, nameOf, ownWorker, remember, resolveWorker, setInstructions,
-  setMission, settleAsk, unlinkWorker, updateItem,
+  addAsk, addItem, addLink, dismissedNotice, type Err, forget, type ItemUpdate, linkWorker, nameOf, ownWorker, remember, resolveWorker, retirePage, setInstructions,
+  setMission, settleAsk, showPage, unlinkWorker, updateItem,
 } from './pm-ops.ts';
 
 type PmToolName = (typeof PM_TOOL_NAMES)[number];
@@ -86,6 +89,24 @@ const tools: Record<PmToolName, Omit<Tool, 'name'>> = {
     annotations: read,
   },
   pm_worker_stop: { description: 'Stops what one of your workers is doing (like Stop in Open Space); it keeps its conversation.', inputSchema: object({ session: WORKER, item: WORKER_ITEM }), annotations: write },
+  pm_page_show: {
+    description: 'Shows the user a page you write, which they open in a window of Open Space: to gather several answers at once (choices, fields, a table to fill, a mock-up to pick). '
+      + `The page is isolated: no network, no file of its own (images and fonts as data: only), its own inline <style> and <script> allowed; ${PM_LIMITS.pageBytes / 1024 / 1024} MB at most. `
+      + 'Open Space puts a small kit before it: readable default styles in its theme, and the answers gathered: each input, select and textarea, under its data-answer, else its name, else its id; '
+      + 'each choice, an element with data-answer and data-value (e.g. <button data-answer="layout" data-value="B">), one per data-answer unless data-multiple, data-submit on it to send at once. '
+      + 'A form\'s submit button, an element with data-submit, Enter in a form\'s field, or the Send button the kit adds when there is none sends them; your script may call OpenSpacePage.submit(answers). '
+      + 'They come back to you as a message, as JSON, once. A new page of the same source replaces the one still open. Returns its id.',
+    inputSchema: object({
+      html: string('The page: an HTML fragment or a whole document'), title: string('Short, shown on its window'),
+      source: string('What it shows, e.g. "login-layout": a new page of the same source replaces the one still open'), item: ITEM,
+      questions: { type: 'array', items: { type: 'string' }, description: 'The tags of the questions (Q<n>) it answers; they stay open until you close them with pm_ask_done' },
+    }, ['html', 'title', 'source']),
+    annotations: write,
+  },
+  pm_page_retire: {
+    description: 'Takes one of your pages down: the user can no longer open nor answer it.',
+    inputSchema: object({ page: string('Its id, given by pm_page_show') }, ['page']), annotations: write,
+  },
 };
 
 /** The tools of a PM session, one per name of PM_TOOL_NAMES. */
@@ -155,6 +176,8 @@ function status(file: PmFile, sessions: SessionInfo[]) {
   const live = workerLive(sessions);
   const shown = file.items.filter((item) => !item.archived);
   const over = shown.filter((item) => item.state === 'finished' || item.state === 'dropped');
+  const pages = file.pages.filter((page) => page.state === 'open' || page.state === 'answered' || page.state === 'seen')
+    .map((page) => ({ page: page.id, title: page.title, source: page.source, state: page.state, ...(page.item ? { item: itemTag(page.item) } : {}) }));
   return {
     mission: file.mission, instructions: file.instructions,
     memory: file.memory.map((note, index) => `${index + 1}. ${note.text}`),
@@ -171,6 +194,8 @@ function status(file: PmFile, sessions: SessionInfo[]) {
         lastReport: worker.lastReport ? { kind: worker.lastReport.kind, at: new Date(worker.lastReport.at).toISOString(), line: worker.lastReport.line } : null,
       };
     }),
+    // the pages the user may still open
+    ...(pages.length ? { pages } : {}),
   };
 }
 
@@ -305,6 +330,32 @@ export async function callPmTool(api: OpenSpaceApi, pm: string, name: string, ar
         run(book, pm, (file) => linkWorker(file, started.id, now, item), (linked) => ({ session: started.id, name: nameOf(started), item: linked.item ? itemTag(linked.item) : null })),
         () => { book.releaseWorker(started.id, pm); book.stopWorker(started.id); },
       );
+    }
+    case 'pm_page_show': {
+      const html = asString(args.html);
+      if (Buffer.byteLength(html) > PM_LIMITS.pageBytes) return failure(st.pm.pageTooBig(PM_LIMITS.pageBytes / 1024 / 1024));
+      const { pages } = book.book;
+      const page = randomBytes(6).toString('hex');
+      // written before it is in the plan, so that the page is never listed without its HTML; gone again if it is not kept
+      await pages.write(pm, page, html);
+      let kept = false;
+      try {
+        const shown = await run(book, pm, (file) => showPage(file, {
+          id: page, title: asString(args.title), source: asString(args.source), ...(item === undefined ? {} : { item }),
+          questions: asArray(args.questions).filter((one): one is string => typeof one === 'string'),
+        }, now), async ({ dropped }) => {
+          kept = true;
+          await pages.remove(pm, dropped).catch(() => {});
+          return { page };
+        });
+        return shown;
+      } finally {
+        if (!kept) await pages.remove(pm, [page]).catch(() => {});
+      }
+    }
+    case 'pm_page_retire': {
+      const page = asString(args.page).trim();
+      return run(book, pm, (file) => retirePage(file, page, now), async () => { await book.book.pages.remove(pm, [page]).catch(() => {}); return 'retired'; });
     }
     case 'pm_worker_link': {
       const session = asString(args.session).trim();
