@@ -590,6 +590,25 @@ describe('a project manager\'s launch', () => {
   });
 });
 
+describe('a project manager\'s summary', () => {
+  it('goes to the pages with its session, and never into sessions.json', async () => {
+    const summary = { items: 2, asks: 1, workers: 1, working: 0, line: 'yours' as const };
+    const dataDir = path.join(base, `data-summary-${++counter}`);
+    const { manager, messages } = setup({}, dataDir, undefined, undefined, undefined, { pmSummary: () => summary });
+    await manager.init();
+    const { id } = await manager.create({ cwd: projectA(), text: 'bonjour' }, { pm: true });
+    const other = await manager.create({ cwd: projectA(), text: 'bonjour' });
+    const sent = messages.flatMap((message) => (message.t === 'session' ? [message.session] : []));
+    assert.deepEqual(sent.findLast((session) => session.id === id)?.pmSummary, summary);
+    assert.equal(sent.findLast((session) => session.id === other.id)?.pmSummary, undefined, 'only a PM has one');
+    assert.deepEqual(manager.forPages().find((session) => session.id === id)?.pmSummary, summary, 'for a page that connects');
+    await manager.shutdown();
+    const stored = JSON.parse(readFileSync(path.join(dataDir, 'sessions.json'), 'utf8')).sessions;
+    assert.ok(stored.some((session: SessionInfo) => session.id === id));
+    assert.ok(stored.every((session: SessionInfo) => session.pmSummary === undefined));
+  });
+});
+
 describe('making a session a project manager, and back', () => {
   /** a turn of the same conversation */
   const turn = (process: { handlers: ProcessHandlers }, conversation: string) => {

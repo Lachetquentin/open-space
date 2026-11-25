@@ -30,7 +30,7 @@ import { st } from './i18n/index.ts';
 import { asArray, asJson, asNumber, asString, isJson } from './json.ts';
 import { MAX_NAME } from './messages.ts';
 import { storedTags } from '../shared/tags.ts';
-import { parsePmTag, type PmMessageTag, SESSION_ID } from '../shared/pm.ts';
+import { parsePmTag, type PmMessageTag, type PmSummary, SESSION_ID } from '../shared/pm.ts';
 import { cleanPending, MAX_DISMISSED } from '../shared/pending.ts';
 import { readGitPending } from './pending-git.ts';
 import { pickSessionName } from './names.ts';
@@ -111,6 +111,10 @@ export interface SessionManagerDeps {
   secrets?: { store: SecretStore; env: (sessionId: string) => Record<string, string> };
   /** what git says a folder holds that is not committed or not pushed (server/pending-git.ts) */
   readGit?: (cwd: string) => Promise<GitPending | null>;
+  /** a PM's counters, sent with its session to the pages and never kept in sessions.json (server/pm-desk.ts) */
+  pmSummary?: (session: SessionInfo) => PmSummary | undefined;
+  /** a session just went out to the pages (a worker's state moves its PM's line) */
+  onShown?: (session: SessionInfo) => void;
 }
 
 /** The answer of a side question is sent at most this often while it is written. */
@@ -511,7 +515,7 @@ export class SessionManager {
         return this.deps.spawnProcess({ ...launch, addDirs: [uploadsFolder(this.deps.config.dataDir), modsFolder(this.deps.config.dataDir)], ...browsers, ...(openSpaceMcp ? { openSpaceMcp } : {}), ...(env ? { env } : {}) }, handlers);
       },
       log,
-      broadcast: this.deps.broadcast,
+      broadcast: (message) => this.broadcast(message),
       persist: () => this.save(),
       // every mod's session counts in one project, the mods folder (Open Space's own roots)
       projectHome: (cwd) => this.deps.config.ownRoots?.find((root) => path.dirname(cwd) === root) ?? null,
@@ -610,6 +614,27 @@ export class SessionManager {
   }
 
   list(): SessionInfo[] { return [...this.sessions.values()].map((session) => session.snapshot()); }
+
+  /** The sessions as the pages see them: a PM with its summary, which sessions.json never keeps (see list). */
+  forPages(): SessionInfo[] { return this.list().map((info) => this.shown(info)); }
+
+  /** Sends the session to the pages again, its PM summary computed anew, without saving anything. */
+  republish(id: string) {
+    const session = this.sessions.get(id);
+    if (session) this.broadcast({ t: 'session', session: session.snapshot() });
+  }
+
+  private shown(info: SessionInfo): SessionInfo {
+    const summary = info.pm ? this.deps.pmSummary?.(info) : undefined;
+    return summary ? { ...info, pmSummary: summary } : info;
+  }
+
+  /** What goes to the pages: a session with its PM summary, heard by onShown once sent. */
+  private broadcast(message: ServerMessage) {
+    if (message.t !== 'session') { this.deps.broadcast(message); return; }
+    this.deps.broadcast({ ...message, session: this.shown(message.session) });
+    this.deps.onShown?.(message.session);
+  }
 
   /** the session has a Claude Code process running */
   isAlive(sessionId: string): boolean { return !!this.sessions.get(sessionId)?.alive; }
@@ -844,7 +869,7 @@ export class SessionManager {
     this.logs.set(info.id, log);
     this.sessions.set(info.id, session);
     if (!options.resumeId) this.awaitingTag.add(info.id);
-    this.deps.broadcast({ t: 'session', session: session.snapshot() });
+    this.broadcast({ t: 'session', session: session.snapshot() });
     this.save();
     if (!this.folderCommands.has(cwd)) void this.probeFolder(cwd, !!info.untrusted);
     if (options.resumeId) {
@@ -1254,7 +1279,7 @@ export class SessionManager {
     const session = this.createSession(info, log);
     this.logs.set(info.id, log);
     this.sessions.set(info.id, session);
-    this.deps.broadcast({ t: 'session', session: session.snapshot() });
+    this.broadcast({ t: 'session', session: session.snapshot() });
     this.save();
     session.showHistory(st.sessions.duplicateOf(source.name), await lastExchanges(source.cwd, conversation, 8, this.deps.home));
     this.remoteByDefault(session);

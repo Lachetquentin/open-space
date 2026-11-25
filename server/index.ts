@@ -14,7 +14,7 @@ import type { WebSocket } from 'ws';
 import { defaultFolder } from '../shared/folders.ts';
 import { isPermissionMode, type AccountsBrowser, type AppUpdate, type ClaudeAccount, type ClaudeInfo, type ClientMessage, type ServerMessage, type SessionOptions } from '../shared/protocol.ts';
 import type { MusicApp } from '../shared/music.ts';
-import { pmSettings } from '../shared/pm.ts';
+import { type PmMessageTag, pmSettings } from '../shared/pm.ts';
 import type { PhoneProblem } from '../shared/triggers.ts';
 import { createAsideRunner } from './aside.ts';
 import { createTagger } from './auto-tag.ts';
@@ -53,6 +53,7 @@ import { migrateShelf, pruneShelf, readVaultOwners, Vault, VaultShelf, writeVaul
 import { projectOf } from './worktrees.ts';
 import { ExternalKey, handleMcp, MCP_SETTINGS, messengerMcpKey, openSpaceMcpConfig, sessionMcpKey, type OpenSpaceApi, type PmApi } from './mcp.ts';
 import { PmBook } from './pm.ts';
+import { PmDesk } from './pm-desk.ts';
 import { resolveWorker } from './pm-ops.ts';
 import { actsAsPm, workerOptions } from './pm-guards.ts';
 import { PmWatch } from './pm-watch.ts';
@@ -201,6 +202,9 @@ const HIDDEN_FILES = [...['secret', 'mcp-key', 'trigger-keys.json', 'mods-env.js
 const crew = new Crew(path.join(config.dataDir, 'crew.json'));
 await crew.load();
 
+/** What the pages see of the PMs and do with them (server/pm-desk.ts), set once the PM files are at hand, below. */
+let pmDesk: PmDesk | undefined;
+
 const sessions = new SessionManager({
   config,
   spawnProcess: claude ? createProcessFactory(claude, buildClaudeEnvironment(process.env, config.passthrough)) : null,
@@ -218,6 +222,8 @@ const sessions = new SessionManager({
   hidden: HIDDEN_FILES,
   promptSuggestions: () => settings.preferences.promptSuggestions,
   pmEnabled: () => pmSettings(settings.preferences).enabled,
+  pmSummary: (session) => pmDesk?.summary(session),
+  onShown: (session) => pmDesk?.sessionShown(session),
   broadcast,
   log,
   onAttention: (kind, session) => {
@@ -369,6 +375,8 @@ async function applyPreferences(changes: Partial<typeof settings.preferences>) {
   const accountsBefore = settings.preferences.accountsBrowser;
   const pmBefore = pmSettings(settings.preferences).enabled;
   await settings.update({ ...rest, ...(roots && !config.rootsLocked ? { roots } : {}) });
+  // the PMs' summaries and plans come or go with the setting
+  if (pmSettings(settings.preferences).enabled !== pmBefore) pmDesk?.settingChanged();
   setServerLanguage(settings.preferences.language ?? 'fr');
   applyRoots();
   broadcast(preferencesMessage());
@@ -394,6 +402,15 @@ async function makeMod(request: string) {
 const pmBook = new PmBook(path.join(config.dataDir, 'pm'));
 sessions.onSessionForgotten((session) => { pmBook.remove(session.id).catch((error: unknown) => log(`cannot remove the PM file of ${session.name}`, error)); });
 const findSession = (sessionId: string) => sessions.list().find((session) => session.id === sessionId);
+/** A message of Open Space to a PM (a worker's report, the user's answer, a change of its plan): queued while it works. */
+const deliverToPm = (pm: string, text: string, tag: PmMessageTag) => sessions.send(pm, text, [], [], tag);
+const desk = new PmDesk({
+  book: pmBook, sessions: () => sessions.list(), enabled: () => pmSettings(settings.preferences).enabled, now: Date.now,
+  republish: (sessionId) => sessions.republish(sessionId), deliver: deliverToPm, log,
+});
+pmDesk = desk;
+sessions.onSessionForgotten((session) => desk.forgotten(session.id));
+desk.start();
 /** The page's PM requests are refused while the setting is off. */
 function checkPmOn() {
   if (!pmSettings(settings.preferences).enabled) throw new Error(st.pm.disabled);
@@ -515,7 +532,7 @@ const pmWatch = new PmWatch({
     const info = findSession(sessionId);
     return (info && sessions.logSince(sessionId, info.lastSeq - 1).events.at(-1)?.at) || info?.stateSince || 0;
   },
-  deliver: (pm, text, tag) => sessions.send(pm, text, [], [], tag),
+  deliver: deliverToPm,
   roleChanged: (sessionId) => sessions.roleChanged(sessionId),
   releaseWorker: (session, pm) => sessions.releaseWorker(session, pm),
   log,
@@ -622,12 +639,12 @@ function onConnection(socket: WebSocket) {
     alive = false;
     socket.ping();
   }, PING_INTERVAL_MS);
-  socket.on('close', () => { clients.delete(socket); presence.delete(socket); clearInterval(heartbeat); });
+  socket.on('close', () => { clients.delete(socket); presence.delete(socket); clearInterval(heartbeat); desk.leave(send); });
   socket.on('error', (error) => log('websocket error', error));
 
   send({
     t: 'hello', claude: claudeInfo(), roots: config.roots,
-    sessions: sessions.list(), commands: sessions.getCommands(), folderCommands: sessions.getFolderCommands(), models: sessions.getModels(), quota: sessions.getQuota(), build: BUILD, crew: crew.list(),
+    sessions: sessions.forPages(), commands: sessions.getCommands(), folderCommands: sessions.getFolderCommands(), models: sessions.getModels(), quota: sessions.getQuota(), build: BUILD, crew: crew.list(),
     preferences: settings.preferences, onboarded: settings.onboarded, rootsLocked: config.rootsLocked, claudeDefaults, appUpdate,
     browsers: browsers.states(), browserAvailable: browsers.available, mods: mods.list(),
   });
@@ -696,7 +713,11 @@ async function handle(message: ClientMessage, send: (message: ServerMessage) => 
       }
       break;
     }
-    case 'send': sessions.send(message.sessionId, message.text, message.images, message.files); break;
+    case 'send':
+      sessions.send(message.sessionId, message.text, message.images, message.files);
+      // "W4 Q3: …" typed to a PM answers that question
+      await desk.typed(message.sessionId, message.text);
+      break;
     case 'answer': sessions.answer(message.sessionId, message.requestId, message.decision); break;
     case 'reply': sessions.reply(message.sessionId, message.requestId, message.answers); break;
     case 'secrets': sessions.giveSecrets(message.sessionId, message.requestId, message.entries, { stored: message.stored ?? [], always: message.always === true }); break;
@@ -751,6 +772,7 @@ async function handle(message: ClientMessage, send: (message: ServerMessage) => 
       if (!info) throw new Error(st.sessions.notFound);
       if (info.untrusted) throw new Error(st.pm.untrusted(info.name));
       sessions.setPm(info.id, true);
+      desk.refresh(info.id);
       // a worker made a PM is its former PM's no longer: let go, and its job closed in that PM's plan
       if (info.pmOf) {
         sessions.releaseWorker(info.id, info.pmOf);
@@ -758,7 +780,9 @@ async function handle(message: ClientMessage, send: (message: ServerMessage) => 
       }
       break;
     }
-    case 'pmRevert': checkPmOn(); sessions.setPm(message.sessionId, false); break;
+    case 'pmRevert': checkPmOn(); sessions.setPm(message.sessionId, false); desk.refresh(message.sessionId); break;
+    // each one waits for the setting and for a session that acts as a PM, else it is ignored (server/pm-desk.ts)
+    case 'pmWatch': case 'pmEdit': case 'pmAsk': case 'pmItemArchive': await desk.handle(message, send); break;
     case 'browser':
       if (sessions.list().some((session) => session.id === message.sessionId)) await browsers.act(browserId(message.sessionId, message.lane), message.action).catch((error: unknown) => log('browser', error));
       break;
