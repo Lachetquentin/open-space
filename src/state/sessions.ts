@@ -71,7 +71,9 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 /** The latest search sent over every session's thread: only its answer is kept. */
 let searchId = 0;
 
-export interface Toast { id: number; kind: 'info' | 'error'; text: string }
+/** `action`: a button of the toast (Annuler), which closes it */
+export interface Toast { id: number; kind: 'info' | 'error'; text: string; action?: ToastAction }
+export interface ToastAction { label: string; run: () => void }
 
 /** What the palette or the "new session" dialog starts with. */
 /** What the launcher starts with: a command in its field, someone of the crew to take it (a click on a visitor). */
@@ -403,7 +405,7 @@ export interface CommandPostState {
   becomeSelf: (name: string) => boolean;
   openNewSession: (draft: NewSessionDraft | null) => void;
   closeLauncher: () => void;
-  toast: (kind: Toast['kind'], text: string) => void;
+  toast: (kind: Toast['kind'], text: string, action?: ToastAction) => void;
 
   /** false when the message could not leave (too long, not connected): the Launcher then keeps what was typed */
   createSession: (options: SessionOptions) => boolean;
@@ -557,10 +559,10 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   seen: readPreference<SeenSequences>('seen', {}),
   send: () => false,
 
-  toast: (kind, text) => {
+  toast: (kind, text, action) => {
     const id = ++toastId;
-    set((s) => ({ toasts: [...s.toasts, { id, kind, text }].slice(-4) }));
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' ? 8000 : 4500);
+    set((s) => ({ toasts: [...s.toasts, { id, kind, text, ...(action ? { action } : {}) }].slice(-4) }));
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' || action ? 8000 : 4500);
   },
 
   receive: (message) => {

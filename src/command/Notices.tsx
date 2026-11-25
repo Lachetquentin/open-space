@@ -16,9 +16,15 @@ export function ConnectionBanner() {
 
 export function Toasts() {
   const toasts = useSessions((s) => s.toasts);
+  const closeToast = (id: number) => useSessions.setState((s) => ({ toasts: s.toasts.filter((one) => one.id !== id) }));
   return (
     <div className="cp-toasts" role="status" aria-live="polite">
-      {toasts.map((toast) => <p key={toast.id} className="cp-toast" data-kind={toast.kind}>{toast.text}</p>)}
+      {toasts.map((toast) => (
+        <p key={toast.id} className="cp-toast" data-kind={toast.kind}>
+          {toast.text}
+          {toast.action && <button type="button" className="cp-toast__action" onClick={() => { closeToast(toast.id); toast.action?.run(); }}>{toast.action.label}</button>}
+        </p>
+      ))}
     </div>
   );
 }

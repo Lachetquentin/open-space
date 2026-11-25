@@ -39,13 +39,13 @@ function strike(sound: AudioContext, frequency: number, at: number) {
   }
 }
 
-/** A finished turn rings once; a question or a permission, which blocks the session, rings twice. */
+/** A finished turn rings once; a question, a permission or a PM's decision, which holds the work up, rings twice. */
 export function chime(items: readonly AttentionItem[]) {
   const sound = audio();
   if (!items.length || !sound || sound.state !== 'running') return;
   if (performance.now() - lastChimeAt < QUIET_MS) return;
   lastChimeAt = performance.now();
-  const blocked = items.some(({ kind }) => kind === 'permission' || kind === 'question');
+  const blocked = items.some(({ kind }) => kind === 'permission' || kind === 'question' || kind === 'decision');
   const now = sound.currentTime;
   strike(sound, FINISHED, now);
   if (blocked) strike(sound, WAITING, now + 0.16);

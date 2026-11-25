@@ -167,8 +167,8 @@ export interface SubagentInfo { id: string; name: string; type: string }
  */
 export interface BackgroundTask { id: string; description: string; kind?: 'shell' | 'monitor' }
 
-/** Why a session waits for the user. */
-export type AttentionKind = 'permission' | 'question' | 'finished' | 'error';
+/** Why a session waits for the user; `decision`: a PM with a question of its plan open (SessionInfo.pmSummary.asks). */
+export type AttentionKind = 'permission' | 'question' | 'decision' | 'finished' | 'error';
 
 /** What a folder would run of its own with a session: its hooks and MCP servers ("event : command", "name : command"), and whether it has a CLAUDE.md. */
 export interface FolderCode { hooks: string[]; mcpServers: string[]; settings: string[]; instructions: boolean }

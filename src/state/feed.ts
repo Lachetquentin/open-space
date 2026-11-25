@@ -1,6 +1,6 @@
 // Turns a session's event log into the thread shown in the detail panel. Pure function.
 import { isSubagentHandback } from '../../shared/activity.ts';
-import { pmMessageKind } from '../../shared/pm.ts';
+import { pmMessageKind, type ReportKind } from '../../shared/pm.ts';
 import type { BranchNews, FileDiff, LoggedEvent, PlanItem, SentFile, ToolOutput, UploadedFile } from '../../shared/protocol.ts';
 import { t } from '../i18n/index.ts';
 
@@ -19,6 +19,10 @@ export type FeedItem =
   /** `startId`: the first item of the turn, which picks its word (see turnWord) */
   | { id: number; kind: 'turn'; at: number; ok: boolean; stopped: boolean; ms: number; startId: number }
   | { id: number; kind: 'notice'; at: number; text: string }
+  /** a worker's report Open Space delivered to this PM: `line` its first line, `words` the worker's last reply, without its fence */
+  | { id: number; kind: 'pmReport'; at: number; worker: string; report: ReportKind; line: string; words: string }
+  /** what Open Space sent this PM for the user: an answer to one of its questions, or the note of a change made from the page */
+  | { id: number; kind: 'pmSent'; at: number; what: 'answer' | 'change'; text: string }
   /** what became of the session's own branch: its base moved on, merged, thrown away, kept, cleaned */
   | { id: number; kind: 'branch'; at: number; what: BranchNews; branch: string; base: string; behind?: number }
   /** files the session (or a sub-agent: `agent`) sent the user, with what it said of them */
@@ -48,8 +52,11 @@ export function buildFeed(events: readonly LoggedEvent[]): Feed {
     if (!turnFirst && ev.k !== 'state' && ev.k !== 'init' && ev.k !== 'shell' && ev.k !== 'shell_done') turnFirst = seq;
     switch (ev.k) {
       case 'start':
-        // the first message Open Space sends a new PM is told as a line of its own, not as the user's
+        // what Open Space sends a PM is told as its own, not as the user's: a new PM's setup as a line, a worker's report
+        // and an answer or a change from the page as cards; an older log has no mark, its messages stay the user's
         if (pmMessageKind(ev.pm) === 'setup') items.push({ id: seq, kind: 'notice', at, text: t.session.feed.pmSetup });
+        else if (ev.pm && 'report' in ev.pm) items.push({ id: seq, kind: 'pmReport', at, worker: ev.pm.report.worker, report: ev.pm.report.kind, ...reportParts(ev.text) });
+        else if (ev.pm) items.push({ id: seq, kind: 'pmSent', at, what: 'answer' in ev.pm ? 'answer' : 'change', text: ev.text });
         else items.push({ id: seq, kind: 'user', at, text: ev.text, images: ev.images ?? [], files: ev.files ?? [] });
         turnStart = items.length;
         break;
@@ -137,7 +144,16 @@ export function buildFeed(events: readonly LoggedEvent[]): Feed {
   return { items, plan };
 }
 
-/** The turn under way: when it started and its first item (null when the thread ends on a finished turn). */
+/**
+ * A worker's report as delivered to its PM (server/pm-watch.ts): its line, then, after a blank line, a sentence and the
+ * worker's last reply between <worker-words-…> tags (server/fence.ts). The tags and the sentence before them are left
+ * out; a report with no reply is its line alone.
+ */
+function reportParts(text: string): { line: string; words: string } {
+  const fenced = /\n\n[^\n]*\n<(worker-words-[0-9a-f]+)>\n([\s\S]*)\n<\/\1>$/.exec(text);
+  return fenced ? { line: text.slice(0, fenced.index), words: fenced[2] } : { line: text, words: '' };
+}
+
 /** The "!" commands of a session still running: started, not ended yet (what Escape stops). */
 export function runningShells(events: readonly LoggedEvent[]): string[] {
   const running = new Set<string>();
@@ -148,6 +164,7 @@ export function runningShells(events: readonly LoggedEvent[]): string[] {
   return [...running];
 }
 
+/** The turn under way: when it started and its first item (null when the thread ends on a finished turn). */
 export function currentTurn(items: readonly FeedItem[]): { startId: number; at: number } | null {
   const lastEnd = items.findLastIndex((item) => item.kind === 'turn');
   const first = items.slice(lastEnd + 1).find((item) => item.kind !== 'shell');

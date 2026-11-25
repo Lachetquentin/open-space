@@ -189,6 +189,7 @@ export const ROOM_PALETTE = {
   status: {
     permission: '#ffb866',
     question: '#ffb866',
+    decision: '#ffb866',
     working: '#8cc2ff',
     finished: '#6fdc9b',
     error: '#ff8f8a',

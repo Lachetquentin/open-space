@@ -259,6 +259,15 @@ function Item({ item, sessionId, speaker, openAgent, onView }: { item: ThreadEnt
       );
     case 'peer':
       return <PeerMessage item={item} speaker={speaker} />;
+    case 'pmReport':
+      return <PmReport item={item} />;
+    case 'pmSent':
+      return (
+        <li className="cp-feed__item" data-kind="pmSent">
+          <span className="cp-feed__who"><SendIcon />{item.what === 'answer' ? t.pm.feed.answer : t.pm.feed.change}<Stamp at={item.at} /></span>
+          <Prose className="cp-feed__text" text={item.text} />
+        </li>
+      );
     case 'turn':
       return turnDuration ? <li className="cp-feed__item" data-kind="turn">{turnLine(item)}</li> : null;
     case 'notice':
@@ -319,8 +328,30 @@ function PeerMessage({ item, speaker }: { item: FeedItem & { kind: 'peer' }; spe
   );
 }
 
+/**
+ * A worker's report Open Space delivered to this PM: who and how it went, folded on the worker's last reply (its line
+ * alone for a report without one).
+ */
+function PmReport({ item }: { item: FeedItem & { kind: 'pmReport' } }) {
+  const name = useSessions((s) => s.sessions[item.worker]?.name);
+  const words = t.pm.feed;
+  const body = item.words || item.line;
+  return (
+    <li className="cp-feed__item" data-kind="pmReport" data-report={item.report}>
+      <details className="cp-fold">
+        <summary className="cp-fold__summary">
+          <span className="cp-fold__label">{words.report(name ?? words.aWorker)}</span>
+          <span className="cp-pm-report__chip">{words.kinds[item.report]}</span>
+          <span className="cp-fold__preview">{body.split('\n')[0]}</span>
+        </summary>
+        <Prose className="cp-feed__text" text={body} />
+      </details>
+    </li>
+  );
+}
+
 /** What the pill counts as new while the user reads higher up: what was said or asked, not the tool calls. */
-const UNREAD_KINDS: ReadonlySet<ThreadEntry['kind']> = new Set(['assistant', 'peer', 'permission', 'subagent', 'notice', 'files', 'artifact', 'branch']);
+const UNREAD_KINDS: ReadonlySet<ThreadEntry['kind']> = new Set(['assistant', 'peer', 'permission', 'subagent', 'notice', 'files', 'artifact', 'branch', 'pmReport']);
 
 /** "Brewed for 10 s · done 22:53": how long the turn took and when it ended, like Claude Code's own line. */
 function turnLine(item: FeedItem & { kind: 'turn' }) {
