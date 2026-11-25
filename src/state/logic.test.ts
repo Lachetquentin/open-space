@@ -13,7 +13,7 @@ import { attentionKind, attentionQueue, newlyWaiting, otherSessions, tabTitle } 
 import { sessionStatus } from '../room/cast.ts';
 import { afterEvent, withPartial } from './partials.ts';
 import { questionAnswers } from './questions.ts';
-import { leadOf } from './pm.ts';
+import { leadOf, unwatchPm, watchedPms, watchPm } from './pm.ts';
 import { quotaWindowName, resetLabel, usageLevel } from '../lib/format.ts';
 import { mdToHtml } from '../lib/markdown.ts';
 
@@ -641,5 +641,14 @@ describe('project managers in the page', () => {
     assert.equal(leadOf(worker, { lead, w: worker })?.id, 'lead');
     assert.equal(leadOf(worker, { lead: { ...lead, pm: undefined }, w: worker }), undefined, 'made an ordinary session again');
     assert.equal(leadOf(worker, { w: worker }), undefined, 'gone');
+  });
+
+  it('keeps watching a PM as long as one view still shows it, and says when the list to send changes', () => {
+    assert.equal(watchPm('lead'), true, 'the first view');
+    assert.equal(watchPm('lead'), false, 'a second view of the same PM');
+    assert.equal(unwatchPm('lead'), false);
+    assert.deepEqual(watchedPms(), ['lead']);
+    assert.equal(unwatchPm('lead'), true, 'the last view gone');
+    assert.deepEqual(watchedPms(), []);
   });
 });
