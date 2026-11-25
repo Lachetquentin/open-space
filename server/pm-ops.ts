@@ -3,7 +3,7 @@
 // everything is checked before anything is changed. What is written reads back as is through parsePmFile (shared/pm.ts),
 // so a text too long is cut to its limit, while what the parser would drop (an empty text, an address too long) is refused.
 // `now` is a time in ms, above 0: the parser reads 0 as no time at all.
-import { askTag, itemTag, openWaits, PM_LIMITS, type PmAsk, type PmFile, type PmItem, type PmLink, type PmWait, type PmWorker, parseTag, SESSION_ID } from '../shared/pm.ts';
+import { askTag, itemTag, openWaits, PM_LIMITS, type PmAsk, type PmFile, type PmItem, type PmLink, type PmMemoryOp, type PmWait, type PmWorker, parseTag, SESSION_ID } from '../shared/pm.ts';
 import type { SessionInfo } from '../shared/protocol.ts';
 import { st } from './i18n/index.ts';
 
@@ -161,6 +161,83 @@ export function answerAsk(file: PmFile, no: number, answer: string, now: number)
   if (!text) return fail(st.pm.emptyAnswer);
   Object.assign(ask, { state: 'answered', answer: text, settledAt: now });
   return ask;
+}
+
+/** A question still open, else the reason it is not one. */
+function openAsk(file: PmFile, no: number): PmAsk | Err {
+  const ask = findAsk(file, no);
+  if (!ask) return fail(st.pm.noAsk(askTag(no)));
+  return ask.state === 'open' ? ask : fail(st.pm.askNotOpen(askTag(no)));
+}
+
+/** The user puts an open question off until `until`, a time ahead: it leaves their list until then. */
+export function snoozeAsk(file: PmFile, no: number, until: number, now: number): PmAsk | Err {
+  const ask = openAsk(file, no);
+  if ('error' in ask) return ask;
+  if (!(until > now)) return fail(st.pm.snoozePast);
+  ask.snoozedUntil = until;
+  return ask;
+}
+
+/** A snoozed question back in the user's list at once. */
+export function wakeAsk(file: PmFile, no: number): PmAsk | Err {
+  const ask = openAsk(file, no);
+  if ('error' in ask) return ask;
+  delete ask.snoozedUntil;
+  return ask;
+}
+
+/** The user sets an open question aside: its PM is told at its next pm_* call (dismissedNotice), and must not ask again. */
+export function dismissAsk(file: PmFile, no: number, now: number): PmAsk | Err {
+  const ask = openAsk(file, no);
+  if ('error' in ask) return ask;
+  Object.assign(ask, { state: 'dismissed', settledAt: now });
+  return ask;
+}
+
+/** A dismissed question open again, as long as its PM has not been told it was dismissed. */
+export function undoDismiss(file: PmFile, no: number): PmAsk | Err {
+  const ask = findAsk(file, no);
+  if (!ask) return fail(st.pm.noAsk(askTag(no)));
+  if (ask.state !== 'dismissed') return fail(st.pm.notDismissed(askTag(no)));
+  if (ask.dismissalTold) return fail(st.pm.dismissalTold(askTag(no)));
+  ask.state = 'open';
+  delete ask.settledAt;
+  return ask;
+}
+
+/** Puts a finished or dropped task out of sight; `no` 0: every one of them. Gives how many were archived. */
+export function archiveItem(file: PmFile, no: number): { archived: number } | Err {
+  const closed = (item: PmItem) => item.state === 'finished' || item.state === 'dropped';
+  if (no !== 0) {
+    const item = findItem(file, no);
+    if (!item) return fail(st.pm.noItem(itemTag(no)));
+    if (!closed(item)) return fail(st.pm.itemNotClosed(itemTag(no)));
+  }
+  const archived = file.items.filter((item) => (no === 0 || item.no === no) && closed(item) && !item.archived);
+  for (const item of archived) item.archived = true;
+  return { archived: archived.length };
+}
+
+/**
+ * The user adds, changes or deletes a note of the PM's memory (`index` from 0). Gives the note's number (from 1, as the
+ * PM reads it) and its text: the new one, or the one deleted.
+ */
+export function editMemory(file: PmFile, change: PmMemoryOp, now: number): { number: number; text: string } | Err {
+  if (change.op === 'add') {
+    const added = remember(file, change.text, now);
+    return 'error' in added ? added : { number: added.number, text: file.memory[added.number - 1].text };
+  }
+  const note = Number.isInteger(change.index) && change.index >= 0 ? file.memory[change.index] : undefined;
+  if (!note) return fail(st.pm.noNote(change.index + 1));
+  if (change.op === 'delete') {
+    file.memory.splice(change.index, 1);
+    return { number: change.index + 1, text: note.text };
+  }
+  const text = clean(change.text, PM_LIMITS.note);
+  if (!text) return fail(st.pm.emptyNote);
+  Object.assign(note, { text, at: now });
+  return { number: change.index + 1, text };
 }
 
 /** Links a web address to task `item`, or to the task of `worker` (one of the PM's workers) when no task is given. */

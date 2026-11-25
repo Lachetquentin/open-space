@@ -7,8 +7,8 @@ import { emptyPm, itemStatus, openWaits, type PmFile, parsePmFile } from '../sha
 import { writeFileAtomic } from './atomic-write.ts';
 import { PmBook } from './pm.ts';
 import {
-  addAsk, addItem, addLink, answerAsk, dismissedNotice, forget, linkWorker, ownWorker, remember, resolveWorker, setInstructions, setMission,
-  settleAsk, unlinkWorker, updateItem,
+  addAsk, addItem, addLink, answerAsk, archiveItem, dismissAsk, dismissedNotice, editMemory, forget, linkWorker, ownWorker, remember, resolveWorker,
+  setInstructions, setMission, settleAsk, snoozeAsk, undoDismiss, unlinkWorker, updateItem, wakeAsk,
 } from './pm-ops.ts';
 
 const base = mkdtempSync(path.join(os.tmpdir(), 'office-pm-'));
@@ -132,6 +132,92 @@ describe('PM questions', () => {
   });
 });
 
+describe('what the user does with a question', () => {
+  /** A file with open questions Q1..Qn. */
+  const withAsks = (count: number): PmFile => {
+    const file = emptyPm();
+    for (let no = 1; no <= count; no++) addAsk(file, { title: `Question ${no}`, detail: '' }, 1);
+    return file;
+  };
+
+  it('snoozes an open question until a time ahead, and wakes it again', () => {
+    const file = withAsks(1);
+    assert.ok(isError(snoozeAsk(file, 1, 100, 100)), 'a time not ahead');
+    assert.ok(!isError(snoozeAsk(file, 1, 500, 100)));
+    assert.equal(file.asks[0].snoozedUntil, 500);
+    assert.ok(!isError(wakeAsk(file, 1)));
+    assert.equal(file.asks[0].snoozedUntil, undefined);
+  });
+
+  it('snoozes, wakes or dismisses only a question still open', () => {
+    const file = withAsks(1);
+    answerAsk(file, 1, 'Yes', 2);
+    assert.ok(isError(snoozeAsk(file, 1, 500, 100)));
+    assert.ok(isError(wakeAsk(file, 1)));
+    assert.ok(isError(dismissAsk(file, 1, 3)));
+    assert.ok(isError(snoozeAsk(file, 9, 500, 100)), 'a question that is not there');
+    assert.equal(file.asks[0].state, 'answered');
+  });
+
+  it('opens a dismissed question again until its PM has been told, not after', () => {
+    const file = withAsks(2);
+    dismissAsk(file, 1, 2);
+    dismissAsk(file, 2, 2);
+    assert.ok(!isError(undoDismiss(file, 1)));
+    assert.equal(file.asks[0].state, 'open');
+    assert.equal(file.asks[0].settledAt, undefined);
+    assert.match(dismissedNotice(file), /Q2/);
+    assert.ok(isError(undoDismiss(file, 2)));
+    assert.equal(file.asks[1].state, 'dismissed');
+    assert.ok(isError(undoDismiss(file, 1)), 'a question that was not dismissed');
+  });
+});
+
+describe('archiving tasks', () => {
+  it('archives a finished or dropped task, never one still open', () => {
+    const file = withItems(3);
+    updateItem(file, { item: 1, status: 'done', done: 'Shipped' }, 2);
+    updateItem(file, { item: 2, status: 'drop' }, 2);
+    assert.ok(isError(archiveItem(file, 3)));
+    assert.ok(isError(archiveItem(file, 9)));
+    assert.ok(!isError(archiveItem(file, 1)));
+    assert.deepEqual(file.items.map((item) => !!item.archived), [true, false, false]);
+  });
+
+  it('archives every finished or dropped task at once with 0', () => {
+    const file = withItems(3);
+    updateItem(file, { item: 1, status: 'done', done: 'Shipped' }, 2);
+    updateItem(file, { item: 3, status: 'drop' }, 2);
+    assert.ok(!isError(archiveItem(file, 0)));
+    assert.deepEqual(file.items.map((item) => !!item.archived), [true, false, true]);
+  });
+});
+
+describe('the memory changed from the page', () => {
+  const withNotes = (...notes: string[]): PmFile => {
+    const file = emptyPm();
+    for (const note of notes) remember(file, note, 1);
+    return file;
+  };
+
+  it('adds, changes and deletes a note by its place from 0', () => {
+    const file = withNotes('First', 'Second', 'Third');
+    assert.deepEqual(editMemory(file, { op: 'edit', index: 0, text: 'Changed' }, 5), { number: 1, text: 'Changed' });
+    assert.deepEqual(file.memory[0], { text: 'Changed', at: 5 });
+    assert.deepEqual(editMemory(file, { op: 'delete', index: 1 }, 6), { number: 2, text: 'Second' });
+    assert.deepEqual(file.memory.map((note) => note.text), ['Changed', 'Third']);
+    assert.deepEqual(editMemory(file, { op: 'add', text: 'Fourth' }, 7), { number: 3, text: 'Fourth' });
+  });
+
+  it('refuses a note that is not there, or empty, and changes nothing', () => {
+    const file = withNotes('First');
+    for (const op of [{ op: 'edit', index: 1, text: 'x' }, { op: 'delete', index: 1 }, { op: 'delete', index: -1 }, { op: 'edit', index: 0, text: '  ' }, { op: 'add', text: '' }] as const) {
+      assert.ok(isError(editMemory(file, op, 5)), JSON.stringify(op));
+    }
+    assert.deepEqual(file.memory, [{ text: 'First', at: 1 }]);
+  });
+});
+
 describe('PM memory and links', () => {
   it('keeps 60 notes at most, and numbers them again once one is forgotten', () => {
     const file = emptyPm();
@@ -187,6 +273,13 @@ describe('a PM file after every operation', () => {
     addLink(file, { worker: 'w-1', url: 'https://example.com/' });
     file.asks[1].state = 'dismissed';
     dismissedNotice(file);
+    addAsk(file, { title: 'Snoozed', detail: '' }, 6);
+    snoozeAsk(file, 3, 900, 6);
+    addAsk(file, { title: 'Dismissed then back', detail: '' }, 6);
+    dismissAsk(file, 4, 7);
+    undoDismiss(file, 4);
+    archiveItem(file, 0);
+    editMemory(file, { op: 'edit', index: 0, text: 'Uses npm' }, 8);
     assert.deepEqual(parsePmFile(JSON.parse(JSON.stringify(file))), file);
   });
 });
@@ -245,6 +338,31 @@ describe('the PM book', () => {
     // @ts-expect-error an async edit would change the file after it was compared and written
     const asyncEdit = () => book.change('p', async (file) => setMission(file, 'Late'));
     assert.equal(typeof asyncEdit, 'function');
+  });
+
+  it('tells its listeners of a PM once a change is written, not of an edit that changed nothing or failed', async () => {
+    const folder = path.join(base, 'heard');
+    const book = new PmBook(folder);
+    const heard: string[] = [];
+    const stop = book.onChange((pm) => heard.push(`${pm}:${JSON.parse(readFileSync(path.join(folder, `${pm}.json`), 'utf8')).mission}`));
+    await book.change('p', (file) => setMission(file, 'Ship'));
+    await book.change('p', (file) => setMission(file, 'Ship'));
+    await book.change('p', (file) => remember(file, '', 1));
+    await assert.rejects(book.change('p', () => { throw new Error('boom'); }));
+    stop();
+    await book.change('p', (file) => setMission(file, 'Again'));
+    assert.deepEqual(heard, ['p:Ship']);
+  });
+
+  it('keeps the last file read or written at hand, never one an edit failed to write', async () => {
+    const book = new PmBook(path.join(base, 'cached'));
+    assert.equal(book.cached('p'), undefined, 'not read yet');
+    await book.change('p', (file) => setMission(file, 'Ship'));
+    assert.equal(book.cached('p')?.mission, 'Ship');
+    await assert.rejects(book.change('p', (file) => { setMission(file, 'Lost'); throw new Error('boom'); }));
+    assert.equal(book.cached('p')?.mission, 'Ship');
+    await book.remove('p');
+    assert.equal(book.cached('p'), undefined);
   });
 
   it('refuses a PM id that is not a session id, so no path leaves its folder', async () => {
