@@ -1,7 +1,9 @@
 // The live pages of the project managers (PM): the HTML a PM shows the user (pm_page_show), kept as it wrote it under
 // OFFICE_DIR/pm/pages/<PM>/<page>.html (0600, written whole), and the document Open Space serves of it: the page behind a
 // small kit (styles readable in both themes, the answers gathered and sent to the window around it), under a policy that
-// lets it reach nothing outside itself. Which page is served, to whom, is the desk's to say (server/pm-desk.ts).
+// lets it reach nothing outside itself and runs no script but the kit's: a page is a form of HTML and CSS. Which page is
+// served, to whom, is the desk's to say (server/pm-desk.ts).
+import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { PAGE_ID, SESSION_ID } from '../shared/pm.ts';
@@ -55,12 +57,14 @@ export class PmPages {
 }
 
 /**
- * What a page may do: run its own inline scripts and styles, show data: images and fonts, nothing else. No request leaves
- * it (fetch, an image, a font, a frame, a form), and its sandbox (here, and the iframe's) gives it an origin of its own:
- * no cookie, no access to Open Space's page, no popup, no navigation of the page around it. Only Open Space frames it.
+ * What a page may do: run the kit's script only (its nonce, new for each response: the PM's own <script> and onclick do not
+ * run, so nothing it wrote can read what is typed and take it elsewhere), use its inline styles, show data: images and
+ * fonts, nothing else. No request leaves it (fetch, an image, a font, a frame, a form), and its sandbox (here, and the
+ * iframe's) gives it an origin of its own: no cookie, no access to Open Space's page, no popup, no navigation of the page
+ * around it. Only Open Space frames it.
  */
-export const PM_PAGE_CSP = [
-  'sandbox allow-scripts', "default-src 'none'", "script-src 'unsafe-inline'", "style-src 'unsafe-inline'", 'img-src data:', 'font-src data:',
+const pageCsp = (nonce: string): string => [
+  'sandbox allow-scripts', "default-src 'none'", `script-src 'nonce-${nonce}'`, "style-src 'unsafe-inline'", 'img-src data:', 'font-src data:',
   "form-action 'none'", "frame-src 'none'", "base-uri 'none'", "frame-ancestors 'self'",
 ].join('; ');
 
@@ -104,11 +108,10 @@ table{width:100%;margin:0 0 1em;border-collapse:collapse}th,td{padding:.4em .5em
  *   name, else its id, else "field<n>" (a checkbox alone: true or false; several under one name: the values checked; a radio
  *   group: the value checked or null; a multiple select: the values chosen), and of each choice (an element with
  *   data-answer that is no field: its data-value, or its text, once pressed; one per name unless data-multiple).
- * Send is a click on an element with data-submit, on a form's submit button (the sandbox lets no form be submitted, so the
- * kit takes it), Enter in a form's field, or the Send button the kit adds when the page has something to answer and no
- * way to send it. The page's own script may call OpenSpacePage.submit(answers?) and OpenSpacePage.answers(). Once sent, the
- * root carries data-sent and Send does nothing until the window says `{ openSpace: 'unsent' }` (nothing went, the answer
- * was refused, the page opened again).
+ * Send is a click on an element with data-submit, on a submit button (a <button> without type="button", in a form or not:
+ * the sandbox lets no form be submitted, so the kit takes it), Enter in a form's field, or the Send button the kit adds
+ * when the page has something to answer and no way to send it. Once sent, the root carries data-sent and Send does
+ * nothing until the window says `{ openSpace: 'unsent' }` (nothing went, the answer was refused, the page opened again).
  */
 const KIT_SCRIPT = `(function () {
   'use strict';
@@ -158,17 +161,16 @@ const KIT_SCRIPT = `(function () {
     });
     return found;
   }
-  function submit(given) {
+  function submit() {
     if (root.hasAttribute('data-sent')) return;
-    var sent = given === undefined ? answers() : given;
-    try { say({ type: 'pm.page.submit', answers: JSON.parse(JSON.stringify(sent)) }); root.setAttribute('data-sent', ''); } catch (error) { console.error(error); }
+    try { say({ type: 'pm.page.submit', answers: answers() }); root.setAttribute('data-sent', ''); } catch (error) { console.error(error); }
   }
   function sends(element) {
     if (element.hasAttribute('data-submit')) return true;
     if (element.matches(CHOICE)) return false;
     if (element.tagName === 'INPUT') return element.type === 'submit' || element.type === 'image';
-    // a button sends its form, or the page when it says type="submit"; a bare button outside a form is the page's own
-    return element.tagName === 'BUTTON' && element.type === 'submit' && (element.form !== null || element.getAttribute('type') === 'submit');
+    // no script of the page runs, so a button is there to send unless it says type="button" (or reset)
+    return element.tagName === 'BUTTON' && element.type === 'submit';
   }
   document.addEventListener('click', function (event) {
     var target = event.target instanceof Element ? event.target : null;
@@ -208,7 +210,6 @@ const KIT_SCRIPT = `(function () {
     document.body.appendChild(bar);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addSend); else addSend();
-  window.OpenSpacePage = Object.freeze({ submit: submit, answers: answers });
   say({ openSpace: 'ready' });
 })();`;
 
@@ -216,12 +217,16 @@ const KIT_SCRIPT = `(function () {
 const scriptValue = (value: string): string => JSON.stringify(value).replace(/</g, '\\u003c');
 
 /**
- * The document served for a page: the kit first (so that the page's own styles and scripts come after it), then the page
- * as the PM wrote it, a fragment or a whole document (its doctype dropped: the browser merges its <html>, <head> and
- * <body> into the ones the kit opened).
+ * What is served for a page, made again for each response: its policy, with a new nonce, and its document. The kit first,
+ * closed before any of the page (so that nothing the PM wrote can take its nonce, and the page's own styles come after),
+ * then the page as the PM wrote it, a fragment or a whole document (its doctype dropped: the browser merges its <html>,
+ * <head> and <body> into the ones the kit opened). Its <script> tags stay, inert. Its http-equiv attributes are renamed so
+ * that no <meta> refreshes the page to an address elsewhere: an attribute's name takes no character reference, so this
+ * literal match finds them all (the same word in its text is renamed too, which is harmless).
  */
-export function pageDocument(html: string): string {
-  const kit = `<style>${KIT_STYLE}</style><script>var SEND = ${scriptValue(st.pm.pageSend)};\n${KIT_SCRIPT}</script>`;
-  const page = html.replace(/^﻿?\s*<!doctype[^>]*>/i, '');
-  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${kit}${page}`;
+export function pageDocument(html: string): { csp: string; body: string } {
+  const nonce = randomBytes(18).toString('base64');
+  const kit = `<style>${KIT_STYLE}</style><script nonce="${nonce}">var SEND = ${scriptValue(st.pm.pageSend)};\n${KIT_SCRIPT}</script>`;
+  const page = html.replace(/^﻿?\s*<!doctype[^>]*>/i, '').replace(/http-equiv/gi, 'data-http-equiv');
+  return { csp: pageCsp(nonce), body: `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${kit}${page}` };
 }

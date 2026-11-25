@@ -117,7 +117,7 @@ before(async () => {
       handle: async (caller, body) => ({ status: 200, json: { caller, body } }),
     },
     mods: { kitDir, port: modsPort, key: (id) => `key-of-${id}`, file: (id, relative) => (id === 'ventes' ? resolveInside(modDir, relative || 'index.html') : null) },
-    pmPage: async (pm, page) => (pm === 'pm1' && page === 'a1' ? '<!doctype html><html lang="fr"><p>Pick one</p><input name="phone">' : null),
+    pmPage: async (pm, page) => (pm === 'pm1' && page === 'a1' ? '<!doctype html><html lang="fr"><p>Pick one</p><input name="phone"><script>location = "https://x/?d="</script><META data-x=">" HTTP-EQUIV="refresh" content="0;url=https://x">' : null),
   });
   ({ server, hooksServer, modsServer } = created);
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
@@ -228,10 +228,26 @@ describe('HTTP requests', () => {
     const csp = (res.headers.get('content-security-policy') ?? '').split(/;\s*/);
     for (const directive of ['sandbox allow-scripts', "default-src 'none'", "form-action 'none'", "frame-src 'none'", "frame-ancestors 'self'"]) assert.ok(csp.includes(directive), directive);
     const body = await res.text();
-    assert.match(body, /^<!doctype html>(?!.*<!doctype).*<html lang="fr"><p>Pick one<\/p><input name="phone">$/is, 'the page after the kit, its own doctype dropped');
-    const scripts = [...body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
-    assert.ok(scripts.some((script) => script.includes('pm.page.submit')), 'the kit sends the answers');
-    for (const script of scripts) assert.doesNotThrow(() => new vm.Script(script), 'the kit is valid JavaScript');
+    assert.match(body, /^<!doctype html>(?!.*<!doctype).*<html lang="fr"><p>Pick one<\/p><input name="phone">/is, 'the page after the kit, its own doctype dropped');
+    const kit = [...body.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].find((match) => match[2].includes('pm.page.submit'));
+    assert.ok(kit, 'the kit sends the answers');
+    assert.doesNotThrow(() => new vm.Script(kit[2]), 'the kit is valid JavaScript');
+    assert.doesNotMatch(body, /[\s/]http-equiv\s*=/i, 'no meta of the page refreshes it elsewhere');
+  });
+
+  it('runs only the kit in a PM’s live page: its own scripts and handlers stay inert', async () => {
+    const page = `http://127.0.0.1:${port}/pm-pages/pm1/a1`;
+    const served = await Promise.all([fetch(page, { headers: { Cookie: COOKIE } }), fetch(page, { headers: { Cookie: COOKIE } })]);
+    const nonces = await Promise.all(served.map(async (res) => {
+      const scriptSrc = (res.headers.get('content-security-policy') ?? '').split(/;\s*/).find((directive) => directive.startsWith('script-src ')) ?? '';
+      assert.doesNotMatch(scriptSrc, /'unsafe-inline'/, 'no inline script or handler runs without the nonce');
+      const nonce = /^script-src 'nonce-([A-Za-z0-9+/=]+)'$/.exec(scriptSrc)?.[1];
+      assert.ok(nonce, scriptSrc);
+      const scripts = [...(await res.text()).matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+      assert.deepEqual(scripts.map((match) => [match[1].includes(`nonce="${nonce}"`), match[2].includes('pm.page.submit')]), [[true, true], [false, false]], 'the kit carries it, the page’s script does not');
+      return nonce;
+    }));
+    assert.notEqual(nonces[0], nonces[1], 'a new nonce each time');
   });
 
   it('plays a video by ranges, as a browser asks for it', async () => {
