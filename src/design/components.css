@@ -1128,6 +1128,20 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 .cp-feed__item[data-kind='pmSent'] .cp-feed__who { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-muted); }
 .cp-feed__item[data-kind='pmSent'] .cp-feed__who .cp-icon { width: 0.75rem; height: 0.75rem; }
 .cp-feed__item[data-kind='pmSent'] .cp-feed__text { max-width: 90%; padding: var(--space-1) var(--space-3); border: var(--border-width) dashed var(--color-border-strong); border-radius: var(--radius-lg); color: var(--color-text-muted); font-size: var(--text-sm); }
+/* a live page the PM published: its title, what became of it, Ouvrir; the answers sent from one, each with its value */
+.cp-pm-page-card { display: flex; align-items: center; gap: var(--space-2); width: fit-content; max-width: 100%; padding: var(--space-2) var(--space-3); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-sunken); font-size: var(--text-sm); }
+.cp-pm-page-card__icon { flex: none; display: flex; color: var(--color-accent); }
+.cp-pm-page-card[data-state='retired'] .cp-pm-page-card__icon { color: var(--color-text-muted); }
+.cp-pm-page-card__text { display: grid; min-width: 0; }
+.cp-pm-page-card__title { font-weight: var(--weight-medium); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cp-pm-page-card__about { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+.cp-pm-page-card__state { flex: none; padding: 0 var(--space-1); border-radius: var(--radius-sm); background: var(--tone-permission-soft); color: var(--tone-permission); font-size: var(--text-xs); white-space: nowrap; }
+.cp-pm-page-card:is([data-state='answered'], [data-state='seen']) .cp-pm-page-card__state { background: var(--tone-reply-soft); color: var(--tone-reply); }
+.cp-pm-page-card:is([data-state='replaced'], [data-state='retired']) .cp-pm-page-card__state { background: none; color: var(--color-text-muted); }
+.cp-pm-answers { display: grid; gap: 2px; max-width: 90%; margin: 0; padding: var(--space-1) var(--space-3); border: var(--border-width) dashed var(--color-border-strong); border-radius: var(--radius-lg); font-size: var(--text-sm); }
+.cp-pm-answers__row { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.cp-pm-answers dt { flex: none; color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+.cp-pm-answers dd { margin: 0; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .cp-feed__agent {
   width: 100%; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2);
   padding: var(--space-2) var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md);
@@ -3244,6 +3258,19 @@ a.cp-button { text-decoration: none; }
 .cp-mod__page { flex: 1 1 auto; min-height: 0; width: 100%; border: 0; background: transparent; color-scheme: dark; }
 .cp-mod__building { display: grid; align-content: start; gap: var(--space-2); padding: var(--space-2) var(--space-3) var(--space-3); font-size: var(--text-sm); color: var(--color-text-muted); }
 .cp-mod__building p { margin: 0; }
+/* a PM's live page in its window (PmPageWindow), dressed as a mod's: over the mods, under the floating browser */
+.cp-mod.cp-pm-page { z-index: 61; }
+.cp-pm-page__titles { flex: 1 1 auto; min-width: 0; display: grid; }
+.cp-pm-page__titles .cp-mod__title { line-height: 1.25; }
+.cp-pm-page__of { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--color-text-muted); font-size: var(--text-xs); }
+.cp-pm-page__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.cp-pm-page__body[hidden] { display: none; }
+.cp-pm-page__gone { flex: 1 1 auto; margin: 0; padding: var(--space-4); color: var(--color-text-muted); font-size: var(--text-sm); }
+.cp-pm-page__foot { flex: none; display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: var(--border-width) solid var(--color-border); }
+.cp-pm-page__note { margin: 0; color: var(--color-text-muted); font-size: var(--text-xs); }
+.cp-pm-page__actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.cp-pm-page__reply { display: flex; align-items: flex-end; gap: var(--space-2); }
+.cp-pm-page__field { flex: 1 1 auto; min-width: 0; resize: vertical; font-size: var(--text-sm); }
 .cp-mod__building-title { color: var(--color-text); font-weight: var(--weight-bold); }
 .cp-mod__building .cp-button { justify-self: start; margin-top: var(--space-1); }
 .cp-mod__skeleton { display: block; height: 0.625rem; border-radius: 999px; background: var(--glass-tint); animation: cp-mod-breathe 1.4s ease-in-out infinite; }

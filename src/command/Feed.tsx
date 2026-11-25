@@ -12,13 +12,16 @@ import { useNow } from '../lib/useNow.ts';
 import { chibiHead, lookOfStranger } from '../room/chibi.ts';
 import { robotHead, robotLook } from '../room/robot.ts';
 import { runOfPerson } from '../../shared/automata.ts';
-import { ChevronDownIcon, CompactIcon, DownloadIcon, ExternalLinkIcon, FileTextIcon, PauseIcon, PeerIcon, PlayIcon, SendIcon } from './Icons.tsx';
+import { ChevronDownIcon, CompactIcon, DownloadIcon, ExternalLinkIcon, FileTextIcon, PauseIcon, PeerIcon, PlayIcon, PmPageIcon, SendIcon } from './Icons.tsx';
 import { Viewer, type Viewed } from './Viewer.tsx';
 import { Prose } from './Prose.tsx';
 import { ActionBlock } from './ActionBlock.tsx';
 import { DiffBlock } from './DiffBlock.tsx';
 import { askEntry, currentTurn, threadOf, toolSummary, turnPhase, turnWord, type Feed as FeedData, type FeedItem, type ThreadEntry, type ToolRun } from '../state/feed.ts';
 import { useSessions } from '../state/sessions.ts';
+import { openPmPage, usePmDetails } from '../state/pm.ts';
+import { answerRows } from '../state/pm-pages.ts';
+import { usePmDetail } from '../state/usePmDetail.ts';
 import { FeedSearch } from './FeedSearch.tsx';
 import { BranchCardView, BranchNewsItem } from './BranchCard.tsx';
 
@@ -261,7 +264,10 @@ function Item({ item, sessionId, speaker, openAgent, onView }: { item: ThreadEnt
       return <PeerMessage item={item} speaker={speaker} />;
     case 'pmReport':
       return <PmReport item={item} />;
+    case 'pmPage':
+      return <PmPageCard item={item} sessionId={sessionId} />;
     case 'pmSent':
+      if (item.what === 'pageAnswer' || item.what === 'pageSeen') return <PmPageSent item={item} sessionId={sessionId} />;
       return (
         <li className="cp-feed__item" data-kind="pmSent">
           <span className="cp-feed__who"><SendIcon />{item.what === 'answer' ? t.pm.feed.answer : t.pm.feed.change}<Stamp at={item.at} /></span>
@@ -350,8 +356,53 @@ function PmReport({ item }: { item: FeedItem & { kind: 'pmReport' } }) {
   );
 }
 
+/**
+ * A live page this PM published: its title, what became of it, and Ouvrir (its window, PmPageWindow), from its plan (the
+ * card stays out of a thread whose PM shows no plan: the setting off, made an ordinary session).
+ */
+function PmPageCard({ item, sessionId }: { item: FeedItem & { kind: 'pmPage' }; sessionId: string }) {
+  const detail = usePmDetail(useSessions((s) => (s.sessions[sessionId]?.pmSummary ? sessionId : null)));
+  if (!detail) return null;
+  const words = t.pm.page;
+  const page = detail.pages.find((one) => one.id === item.page);
+  const state = !page ? null : page.state === 'open' && !page.questions.length ? 'quiet' : page.state;
+  return (
+    <li className="cp-feed__item" data-kind="pmPage">
+      <div className="cp-pm-page-card" data-state={state ?? 'retired'}>
+        <span className="cp-pm-page-card__icon"><PmPageIcon /></span>
+        <span className="cp-pm-page-card__text">
+          <span className="cp-pm-page-card__title">{page?.title ?? words.notKept}</span>
+          {page && page.questions.length > 0 && <span className="cp-pm-page-card__about">{words.about(page.questions.join(' '))}</span>}
+        </span>
+        {state && <span className="cp-pm-page-card__state">{words.states[state]}</span>}
+        {page && page.state !== 'retired' && (
+          <button type="button" className="cp-button" data-size="small" data-variant={page.state === 'open' ? 'primary' : undefined} title={words.openTitle(page.title)} onClick={() => openPmPage(sessionId, page.id)}>{words.open}</button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** The answers sent from one of this PM's live pages, each with its value, or the note that the user saw one. */
+function PmPageSent({ item, sessionId }: { item: FeedItem & { kind: 'pmSent' }; sessionId: string }) {
+  // named from its plan while the page watches the PM (its Inbox, a page's card)
+  const title = usePmDetails((s) => s.details[sessionId]?.pages.find((one) => one.id === item.page)?.title ?? null);
+  const words = t.pm.page;
+  const rows = item.what === 'pageAnswer' ? answerRows(item.answers, words) : [];
+  return (
+    <li className="cp-feed__item" data-kind="pmSent">
+      <span className="cp-feed__who"><SendIcon />{item.what === 'pageAnswer' ? t.pm.feed.pageAnswer(title) : t.pm.feed.pageSeen(title)}<Stamp at={item.at} /></span>
+      {rows.length > 0 && (
+        <dl className="cp-pm-answers">
+          {rows.map(([name, value]) => <div key={name} className="cp-pm-answers__row">{name && <dt>{name}</dt>}<dd>{value}</dd></div>)}
+        </dl>
+      )}
+    </li>
+  );
+}
+
 /** What the pill counts as new while the user reads higher up: what was said or asked, not the tool calls. */
-const UNREAD_KINDS: ReadonlySet<ThreadEntry['kind']> = new Set(['assistant', 'peer', 'permission', 'subagent', 'notice', 'files', 'artifact', 'branch', 'pmReport']);
+const UNREAD_KINDS: ReadonlySet<ThreadEntry['kind']> = new Set(['assistant', 'peer', 'permission', 'subagent', 'notice', 'files', 'artifact', 'branch', 'pmReport', 'pmPage']);
 
 /** "Brewed for 10 s · done 22:53": how long the turn took and when it ended, like Claude Code's own line. */
 function turnLine(item: FeedItem & { kind: 'turn' }) {

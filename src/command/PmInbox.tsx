@@ -1,19 +1,21 @@
 // A PM's Inbox, above its message field next to PendingStrip: the questions of its plan waiting for the user (their
-// answers as buttons, the recommended one marked; a field when it proposes none), the tasks they block, what its last
+// answers as buttons, the recommended one marked; a field when it proposes none), its live pages to fill (opened in their
+// window, PmPageWindow), the tasks they block, what its last
 // turn finished; the snoozed and settled questions and the closed tasks in three drawers; a question shown where it was
 // asked in the conversation (ShowInFeedContext). Shown while the server sends the PM's summary (the PM setting on), drawn
 // from the plan it sends (usePmDetail) and nothing else: an answer taken leaves when the plan comes back.
 import { use, useEffect, useState } from 'react';
-import { fullAskTag, itemTag, type PmAsk, type PmItem } from '../../shared/pm.ts';
+import { fullAskTag, itemTag, type PmAsk, type PmItem, type PmPage } from '../../shared/pm.ts';
 import type { PmDetail, SessionInfo } from '../../shared/protocol.ts';
 import { MAX_TIMER_MS } from '../../shared/timers.ts';
 import { t } from '../i18n/index.ts';
 import { resetLabel } from '../lib/format.ts';
 import { blockingAsks, inAnHour, type InboxRow, pmInbox, tomorrowMorning } from '../state/pm-inbox.ts';
 import { pmArchive, pmAskAction, usePmDetail } from '../state/usePmDetail.ts';
+import { openPmPage } from '../state/pm.ts';
 import { useSessions } from '../state/sessions.ts';
 import { ShowInFeedContext } from './Feed.tsx';
-import { CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, CopyIcon, InboxIcon, MessageIcon, StarIcon, SunriseIcon } from './Icons.tsx';
+import { CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, CopyIcon, InboxIcon, MessageIcon, PmPageIcon, StarIcon, SunriseIcon } from './Icons.tsx';
 import { ActionMenu } from './ModWindows.tsx';
 import { WindowCompactContext } from './useWindowDrag.ts';
 import { usePhone } from '../lib/phone.ts';
@@ -44,6 +46,7 @@ export function PmInbox({ session }: { session: SessionInfo }) {
   const words = t.pm.inbox;
   const counts = [
     inbox.counts.asks ? t.pm.counts.asks(inbox.counts.asks) : '',
+    inbox.counts.pages ? words.pages(inbox.counts.pages) : '',
     inbox.counts.blocked ? words.blocked(inbox.counts.blocked) : '',
     inbox.counts.finished ? words.finished(inbox.counts.finished) : '',
   ].filter(Boolean).join(' · ') || words.nothing;
@@ -82,10 +85,11 @@ export function PmInbox({ session }: { session: SessionInfo }) {
   );
 }
 
-const rowKey = (row: InboxRow) => (row.kind === 'ask' ? `ask:${row.ask.no}` : `${row.kind}:${row.item.no}`);
+const rowKey = (row: InboxRow) => (row.kind === 'ask' ? `ask:${row.ask.no}` : row.kind === 'page' ? `page:${row.page.id}` : `${row.kind}:${row.item.no}`);
 
 function Row({ pm, row, detail }: { pm: string; row: InboxRow; detail: PmDetail }) {
   if (row.kind === 'ask') return <AskRow pm={pm} ask={row.ask} />;
+  if (row.kind === 'page') return <PageRow pm={pm} page={row.page} />;
   return <ItemRow item={row.item} note={row.kind === 'blocked' ? t.pm.inbox.blockedBy(blockingAsks(detail, row.item).map((ask) => fullAskTag(ask)).join(', ')) : row.item.done || t.pm.inbox.done} kind={row.kind} />;
 }
 
@@ -99,6 +103,23 @@ function ItemRow({ item, note, kind }: { item: PmItem; note: string; kind: 'bloc
         {kind === 'finished' && <CheckIcon />}
       </p>
       <p className="cp-pm-inbox__note">{note}</p>
+    </li>
+  );
+}
+
+/** A live page to fill: the questions it asks, and Ouvrir (its window, where it is answered). */
+function PageRow({ pm, page }: { pm: string; page: PmPage }) {
+  const words = t.pm.page;
+  return (
+    <li className="cp-pm-inbox__row" data-kind="page">
+      <div className="cp-pm-inbox__line">
+        <span className="cp-pm-inbox__tag">{page.questions.join(' ')}</span>
+        <span className="cp-pm-inbox__text">{page.title}</span>
+        <button type="button" className="cp-button" data-size="small" data-variant="primary" title={words.openTitle(page.title)} onClick={() => openPmPage(pm, page.id)}>
+          <PmPageIcon />{words.open}
+        </button>
+      </div>
+      <p className="cp-pm-inbox__note">{words.states.open}</p>
     </li>
   );
 }

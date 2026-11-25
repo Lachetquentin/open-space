@@ -1,6 +1,6 @@
 // Turns a session's event log into the thread shown in the detail panel. Pure function.
 import { isSubagentHandback } from '../../shared/activity.ts';
-import { pmMessageKind, type ReportKind } from '../../shared/pm.ts';
+import { PAGE_ID, pmMessageKind, type ReportKind } from '../../shared/pm.ts';
 import type { BranchNews, FileDiff, LoggedEvent, PlanItem, SentFile, ToolOutput, UploadedFile } from '../../shared/protocol.ts';
 import { MCP_SERVER_NAME } from '../../shared/triggers.ts';
 import { t } from '../i18n/index.ts';
@@ -22,8 +22,13 @@ export type FeedItem =
   | { id: number; kind: 'notice'; at: number; text: string }
   /** a worker's report Open Space delivered to this PM: `line` its first line, `words` the worker's last reply, without its fence */
   | { id: number; kind: 'pmReport'; at: number; worker: string; report: ReportKind; line: string; words: string }
-  /** what Open Space sent this PM for the user: an answer to one of its questions, or the note of a change made from the page */
-  | { id: number; kind: 'pmSent'; at: number; what: 'answer' | 'change'; text: string }
+  /**
+   * what Open Space sent this PM for the user: an answer to one of its questions, the note of a change made from the page,
+   * the answers sent from one of its live pages (`page`, `answers` taken out of their fence) or the note that one was seen
+   */
+  | { id: number; kind: 'pmSent'; at: number; what: 'answer' | 'change' | 'pageAnswer' | 'pageSeen'; text: string; page?: string; answers?: unknown }
+  /** a live page this PM published (pm_page_show): its id, the rest is in its plan */
+  | { id: number; kind: 'pmPage'; at: number; page: string }
   /** what became of the session's own branch: its base moved on, merged, thrown away, kept, cleaned */
   | { id: number; kind: 'branch'; at: number; what: BranchNews; branch: string; base: string; behind?: number }
   /** files the session (or a sub-agent: `agent`) sent the user, with what it said of them */
@@ -57,6 +62,8 @@ export function buildFeed(events: readonly LoggedEvent[]): Feed {
         // and an answer or a change from the page as cards; an older log has no mark, its messages stay the user's
         if (pmMessageKind(ev.pm) === 'setup') items.push({ id: seq, kind: 'notice', at, text: t.session.feed.pmSetup });
         else if (ev.pm && 'report' in ev.pm) items.push({ id: seq, kind: 'pmReport', at, worker: ev.pm.report.worker, report: ev.pm.report.kind, ...reportParts(ev.text) });
+        else if (ev.pm && 'pageAnswer' in ev.pm) items.push({ id: seq, kind: 'pmSent', at, what: 'pageAnswer', text: ev.text, page: ev.pm.pageAnswer.page, answers: pageAnswers(ev.text) });
+        else if (ev.pm && 'pageSeen' in ev.pm) items.push({ id: seq, kind: 'pmSent', at, what: 'pageSeen', text: ev.text, page: ev.pm.pageSeen.page });
         else if (ev.pm) items.push({ id: seq, kind: 'pmSent', at, what: 'answer' in ev.pm ? 'answer' : 'change', text: ev.text });
         else items.push({ id: seq, kind: 'user', at, text: ev.text, images: ev.images ?? [], files: ev.files ?? [] });
         turnStart = items.length;
@@ -95,6 +102,9 @@ export function buildFeed(events: readonly LoggedEvent[]): Feed {
       case 'act_done': {
         const item = tools.get(ev.id);
         if (item) Object.assign(item, { ok: ev.ok }, ev.output ? { output: ev.output } : {});
+        // a live page the PM published: its card follows the call
+        const page = item?.tool === PM_PAGE_TOOL && ev.ok && item.agent === null ? shownPage(ev.output?.lines ?? []) : null;
+        if (page) items.push({ id: seq, kind: 'pmPage', at, page });
         break;
       }
       case 'diff': {
@@ -153,6 +163,29 @@ export function buildFeed(events: readonly LoggedEvent[]): Feed {
 function reportParts(text: string): { line: string; words: string } {
   const fenced = /\n\n[^\n]*\n<(worker-words-[0-9a-f]+)>\n([\s\S]*)\n<\/\1>$/.exec(text);
   return fenced ? { line: text.slice(0, fenced.index), words: fenced[2] } : { line: text, words: '' };
+}
+
+/**
+ * The answers sent from a live page as delivered to its PM (server/pm-desk.ts): the JSON between the <pm-page-answers-…>
+ * tags its message ends with; undefined without them.
+ */
+function pageAnswers(text: string): unknown {
+  const fenced = /\n<(pm-page-answers-[0-9a-f]+)>\n([\s\S]*)\n<\/\1>$/.exec(text);
+  if (!fenced) return undefined;
+  try {
+    return JSON.parse(fenced[2]);
+  } catch {
+    return fenced[2];
+  }
+}
+
+/** pm_page_show as Claude Code names it, the PM's tool that publishes a live page. */
+const PM_PAGE_TOOL = `mcp__${MCP_SERVER_NAME}__pm_page_show`;
+
+/** The page pm_page_show gave back (its result, `{ "page": "<id>" }`, server/pm-tools.ts); null when there is none. */
+function shownPage(lines: readonly string[]): string | null {
+  const page = /"page":\s*"([^"]+)"/.exec(lines.join('\n'))?.[1];
+  return page && PAGE_ID.test(page) ? page : null;
 }
 
 /** The "!" commands of a session still running: started, not ended yet (what Escape stops). */

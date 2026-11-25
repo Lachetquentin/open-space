@@ -15,7 +15,7 @@ import { afterEvent, withPartial } from './partials.ts';
 import { questionAnswers } from './questions.ts';
 import { leadOf, unwatchPm, watchedPms, watchPm } from './pm.ts';
 import { pmInbox } from './pm-inbox.ts';
-import { emptyPm, type PmAsk, type PmDetail, type PmItem } from '../../shared/pm.ts';
+import { emptyPm, type PmAsk, type PmDetail, type PmItem, type PmPage } from '../../shared/pm.ts';
 import { quotaWindowName, resetLabel, usageLevel } from '../lib/format.ts';
 import { mdToHtml } from '../lib/markdown.ts';
 
@@ -333,6 +333,23 @@ describe('buildFeed', () => {
       logged(3, { k: 'start', text: 'Report of Lea: finished.\n\nHer reply:\n<worker-words-ab12cd>\nDone.\n</worker-words-ab12cd>' }),
     ]).items;
     assert.deepEqual(items.map((item) => (item.kind === 'pmSent' ? `${item.kind}:${item.what}` : item.kind)), ['pmSent:answer', 'pmSent:change', 'user']);
+  });
+
+  it('puts the card of a live page the PM published after its call, and takes the answers sent from a page out of their fence', () => {
+    const PAGE_SHOW = 'mcp__open-space__pm_page_show';
+    const items = buildFeed([
+      logged(1, { k: 'act', who: 'chef', id: 'c1', tool: PAGE_SHOW, detail: '' }),
+      logged(2, { k: 'act_done', who: 'chef', id: 'c1', ok: true, output: { lines: ['{', '  "page": "a1b2c3d4e5f6"', '}'], total: 3 } }),
+      logged(3, { k: 'act', who: 'chef', id: 'c2', tool: PAGE_SHOW, detail: '' }),
+      logged(4, { k: 'act_done', who: 'chef', id: 'c2', ok: false, output: { lines: ['Give a source.'], total: 1 } }),
+      logged(5, { k: 'start', text: 'Answers from your page (page a1b2c3d4e5f6):\n<pm-page-answers-0a1b2c>\n{\n  "layout": "B",\n  "phone": true\n}\n</pm-page-answers-0a1b2c>', pm: { pageAnswer: { page: 'a1b2c3d4e5f6' } } }),
+      logged(6, { k: 'start', text: 'The user saw your page.', pm: { pageSeen: { page: 'a1b2c3d4e5f6' } } }),
+    ]).items;
+    assert.deepEqual(items.map((item) => item.kind), ['tool', 'pmPage', 'tool', 'pmSent', 'pmSent'], 'no card for a call refused');
+    const [card, answers, seen] = items.filter((item) => item.kind === 'pmPage' || item.kind === 'pmSent');
+    assert.equal(card.kind === 'pmPage' && card.page, 'a1b2c3d4e5f6');
+    assert.deepEqual(answers.kind === 'pmSent' && [answers.what, answers.page, answers.answers], ['pageAnswer', 'a1b2c3d4e5f6', { layout: 'B', phone: true }]);
+    assert.deepEqual(seen.kind === 'pmSent' && [seen.what, seen.page], ['pageSeen', 'a1b2c3d4e5f6']);
   });
 
   it('survives an empty log and events about unknown sub-agents', () => {
@@ -724,7 +741,7 @@ describe('project managers in the page', () => {
       const { reports: _reports, ...file } = emptyPm();
       return { ...file, pm: 'lead', live: [], ...extra };
     };
-    const rows = (inbox: ReturnType<typeof pmInbox>) => inbox.rows.map((row) => (row.kind === 'ask' ? `Q${row.ask.no}` : `${row.kind}:W${row.item.no}`));
+    const rows = (inbox: ReturnType<typeof pmInbox>) => inbox.rows.map((row) => (row.kind === 'ask' ? `Q${row.ask.no}` : row.kind === 'page' ? `page:${row.page.id}` : `${row.kind}:W${row.item.no}`));
 
     it('brings a snoozed question back once its snooze is over, with nothing else changed', () => {
       const plan = detail({ asks: [ask(1, { snoozedUntil: 5000 })] });
@@ -752,7 +769,17 @@ describe('project managers in the page', () => {
 
     it('shows four rows at most, questions first, and counts the others', () => {
       const inbox = pmInbox(detail({ turn: 1, items: [item(1, { state: 'finished', touchedTurn: 1 })], asks: [ask(4), ask(3), ask(2), ask(1)] }), 0);
-      assert.deepEqual([rows(inbox), inbox.more, inbox.counts], [['Q1', 'Q2', 'Q3', 'Q4'], 1, { asks: 4, blocked: 0, finished: 1 }]);
+      assert.deepEqual([rows(inbox), inbox.more, inbox.counts], [['Q1', 'Q2', 'Q3', 'Q4'], 1, { asks: 4, pages: 0, blocked: 0, finished: 1 }]);
+    });
+
+    it('lists an open page that asks questions after the questions, those questions on its row rather than on their own', () => {
+      const page = (id: string, extra: Partial<PmPage> = {}): PmPage => ({ id, source: id, title: id, questions: [], state: 'open', createdAt: 0, ...extra });
+      const inbox = pmInbox(detail({
+        items: [item(1)],
+        asks: [ask(1, { item: 1, holds: true }), ask(2)],
+        pages: [page('quiet'), page('done', { questions: ['Q2'], state: 'answered' }), page('form', { questions: ['Q1'] })],
+      }), 0);
+      assert.deepEqual(rows(inbox), ['Q2', 'page:form']);
     });
   });
 });
