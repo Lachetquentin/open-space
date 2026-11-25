@@ -332,7 +332,12 @@ export function showPage(
   for (const open of file.pages) if (open.source === source && open.state === 'open') Object.assign(open, { state: 'replaced', replacedBy: page.id, settledAt: now });
   const created: PmPage = { id: page.id, ...(page.item === undefined ? {} : { item: page.item }), source, title, questions, state: 'open', createdAt: now };
   file.pages.push(created);
-  const dropped = file.pages.splice(0, Math.max(0, file.pages.length - PM_LIMITS.pages)).map((one) => one.id);
+  // the oldest settled pages go first: a page still open and unanswered goes only when nothing else is left to drop
+  const excess = Math.max(0, file.pages.length - PM_LIMITS.pages);
+  const settled = file.pages.filter((one) => one.state !== 'open').slice(0, excess);
+  const gone = new Set([...settled, ...file.pages.filter((one) => !settled.includes(one)).slice(0, excess - settled.length)]);
+  const dropped = file.pages.filter((one) => gone.has(one)).map((one) => one.id);
+  file.pages = file.pages.filter((one) => !gone.has(one));
   return { page: created, dropped };
 }
 

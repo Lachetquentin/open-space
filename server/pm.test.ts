@@ -282,6 +282,15 @@ describe('PM pages', () => {
     assert.equal(file.pages.length, PM_LIMITS.pages);
   });
 
+  it('lets go of an answered page before an open one past the limit', () => {
+    const file = emptyPm();
+    for (let no = 0; no < PM_LIMITS.pages; no++) showPage(file, page(`p${no}`), 1);
+    answerPage(file, 'p1', { a: 'B' }, 2);
+    assert.deepEqual(showPage(file, page('last'), 3), { page: file.pages.at(-1), dropped: ['p1'] });
+    assert.equal(file.pages[0]?.id, 'p0');
+    assert.equal(file.pages.length, PM_LIMITS.pages);
+  });
+
   it('refuses a page about a task or a question that does not exist, changing nothing', () => {
     const file = withItems(1);
     addAsk(file, { item: 1, title: 'Which phone?', detail: '' }, 1);
