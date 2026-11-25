@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -512,6 +512,25 @@ describe('a PM’s questions on Telegram', () => {
       tap('iPhone');
       await until(() => delivered.length === 1);
       assert.deepEqual(delivered, ['Q1: iPhone']);
+    } finally {
+      restarted.stop();
+    }
+  });
+
+  it('starts from a file whose kept questions are damaged, keeping the good ones', async () => {
+    const { deps, messengers, asked } = await pmOffice('pm-damaged.json');
+    await messengers.tick();
+    messengers.stop();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const file = path.join(base, 'pm-damaged.json');
+    const bots = JSON.parse(readFileSync(file, 'utf8'));
+    bots[0].pmAsks = [null, 7, { key: 3 }, ...bots[0].pmAsks];
+    writeFileSync(file, JSON.stringify(bots));
+    const restarted = new Messengers(deps);
+    restarted.start();
+    try {
+      await restarted.tick();
+      assert.equal(asked().length, 1, 'the good one is not sent again');
     } finally {
       restarted.stop();
     }

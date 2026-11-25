@@ -191,7 +191,7 @@ export class Messengers {
     // the PM questions sent before a restart: still awaited, never sent twice
     for (const bot of this.bots) {
       for (const kept of Array.isArray(bot.pmAsks) ? bot.pmAsks : []) {
-        if (PM_KEY.test(kept.key) && Number.isInteger(kept.chat) && Number.isInteger(kept.message) && typeof kept.text === 'string') {
+        if (kept && typeof kept === 'object' && typeof kept.key === 'string' && PM_KEY.test(kept.key) && Number.isInteger(kept.chat) && Number.isInteger(kept.message) && typeof kept.text === 'string') {
           this.sent.set(`${bot.id}|${kept.key}`, { chatId: kept.chat, messageId: kept.message, text: kept.text });
         }
       }
