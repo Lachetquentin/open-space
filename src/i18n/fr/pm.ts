@@ -48,6 +48,10 @@ export const pm = {
     copied: (tag: string) => `« ${tag} » copié`,
     snoozed: (count: number) => `Reportées (${count})`,
     settled: (count: number) => `Traitées (${count})`,
+    closed: (count: number) => `Terminées (${count})`,
+    showInFeed: 'Montrer dans le fil',
+    showInFeedTitle: 'Aller dans la conversation là où le PM a posé cette question',
+    notInFeed: 'Cette question a été posée plus haut que ce que le fil montre',
   },
   /** a PM's line in the session list, its workers under it */
   list: {

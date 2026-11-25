@@ -43,6 +43,10 @@ export const pm: Dictionary['pm'] = {
     copied: (tag: string) => `“${tag}” copied`,
     snoozed: (count: number) => `Snoozed (${count})`,
     settled: (count: number) => `Handled (${count})`,
+    closed: (count: number) => `Finished (${count})`,
+    showInFeed: 'Show in the thread',
+    showInFeedTitle: 'Go to where the PM asked this question in the conversation',
+    notInFeed: 'This question was asked further back than the thread shows',
   },
   list: {
     fold: (name: string) => `Fold ${name}’s workers`,

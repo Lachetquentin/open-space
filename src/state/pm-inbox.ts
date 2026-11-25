@@ -1,7 +1,8 @@
 // What a PM's Inbox shows above its message field (src/command/PmInbox.tsx), from its plan as the server sends it
-// (PmDetail): the questions waiting for the user, the tasks they block, what the last turn finished. Pure functions.
+// (PmDetail): the questions waiting for the user, the tasks they block, what the last turn finished; in its drawers, the
+// snoozed and settled questions and the closed tasks. Pure functions.
 import { asksShown, itemStatus, type PmAsk, type PmDetail, type PmItem } from '../../shared/pm.ts';
-import { planOf } from './pm-project.ts';
+import { itemSections, planOf } from './pm-project.ts';
 
 export type InboxRow = { kind: 'ask'; ask: PmAsk } | { kind: 'blocked'; item: PmItem } | { kind: 'finished'; item: PmItem };
 
@@ -19,6 +20,8 @@ export interface Inbox {
   snoozed: PmAsk[];
   /** the settled questions, the latest first */
   settled: PmAsk[];
+  /** the tasks finished or dropped and not archived, as the Projet section ends with them: what "Tout archiver" takes away */
+  closed: PmItem[];
   /** when the nearest snoozed question comes back */
   nextWake?: number;
 }
@@ -46,7 +49,8 @@ export function pmInbox(detail: PmDetail, now: number): Inbox {
   return {
     rows: rows.slice(0, INBOX_ROWS), more: Math.max(0, rows.length - INBOX_ROWS),
     counts: { asks: open.length, blocked: blocked.length, finished: finished.length },
-    snoozed, settled, ...(snoozed.length ? { nextWake: snoozed[0].snoozedUntil } : {}),
+    snoozed, settled, closed: itemSections(detail).find(({ section }) => section === 'done')?.items ?? [],
+    ...(snoozed.length ? { nextWake: snoozed[0].snoozedUntil } : {}),
   };
 }
 

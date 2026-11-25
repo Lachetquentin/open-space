@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useEffect, useMemo, useRef, useState } from 'react';
 import { TEXT_EXTENSIONS, type SentFile, type UploadedFile } from '../../shared/protocol.ts';
 import { previewOf } from '../state/files.ts';
 import { DEFAULT_LOOK } from '../design/people-palette.ts';
@@ -17,7 +17,7 @@ import { Viewer, type Viewed } from './Viewer.tsx';
 import { Prose } from './Prose.tsx';
 import { ActionBlock } from './ActionBlock.tsx';
 import { DiffBlock } from './DiffBlock.tsx';
-import { currentTurn, threadOf, toolSummary, turnPhase, turnWord, type Feed as FeedData, type FeedItem, type ThreadEntry, type ToolRun } from '../state/feed.ts';
+import { askEntry, currentTurn, threadOf, toolSummary, turnPhase, turnWord, type Feed as FeedData, type FeedItem, type ThreadEntry, type ToolRun } from '../state/feed.ts';
 import { useSessions } from '../state/sessions.ts';
 import { FeedSearch } from './FeedSearch.tsx';
 import { BranchCardView, BranchNewsItem } from './BranchCard.tsx';
@@ -41,7 +41,7 @@ function Tools({ run }: { run: ToolRun }) {
   const running = run.tools.find((tool) => tool.ok === null);
   const failed = run.tools.filter((tool) => tool.ok === false).length;
   return (
-    <li className="cp-feed__item" data-kind="tools">
+    <li className="cp-feed__item" data-kind="tools" data-entry={run.id}>
       <details>
         <summary>
           <span className="cp-feed__count">{t.session.feed.actions(run.tools.length)}</span>
@@ -227,7 +227,7 @@ function Item({ item, sessionId, speaker, openAgent, onView }: { item: ThreadEnt
       );
     case 'assistant':
       return (
-        <li className="cp-feed__item" data-kind="assistant" data-named={item.author ? 'true' : undefined}>
+        <li className="cp-feed__item" data-kind="assistant" data-named={item.author ? 'true' : undefined} data-entry={item.id}>
           <span className="cp-feed__who">{item.author ?? speaker}<Stamp at={item.at} /></span>
           <Prose className="cp-feed__text" text={item.text} />
         </li>
@@ -389,6 +389,12 @@ function Working({ items, speaker, sessionId }: { items: readonly FeedItem[]; sp
   );
 }
 
+/** A place of the conversation to bring into view: where a PM asked the question it wrote at `at` (askEntry); `key`: each request. */
+export interface FeedFocus { at: number; key: number }
+
+/** Brings the conversation of the panel to where its PM asked a question written at `at` (Detail.tsx, for the Inbox). */
+export const ShowInFeedContext = createContext<((at: number) => void) | null>(null);
+
 /**
  * The thread: the conversation (the user, the session's own agent, every question and permission, one line per
  * sub-agent), or one sub-agent's, with what it said and did (picked in SessionTabs). It sticks to the bottom while the user has not
@@ -398,9 +404,9 @@ function Working({ items, speaker, sessionId }: { items: readonly FeedItem[]; sp
  * `working`: the session is at it, so its thread ends on a typing indicator until something arrives. `drafts`: the
  * messages still being written, by who writes them ("chef" or a sub-agent id), shown as they grow.
  */
-export function Feed({ feed, sessionId, loading, speaker, working, drafts, agent, setAgent }: {
+export function Feed({ feed, sessionId, loading, speaker, working, drafts, agent, setAgent, focus = null }: {
   feed: FeedData; sessionId: string; loading: boolean; speaker: string; working: boolean; drafts: Readonly<Record<string, string>>;
-  agent: string | null; setAgent: (agentId: string | null) => void;
+  agent: string | null; setAgent: (agentId: string | null) => void; focus?: FeedFocus | null;
 }) {
   // a picture, a page, a video or a text of the thread opened in large
   const [viewing, setViewing] = useState<Viewed | null>(null);
@@ -453,6 +459,23 @@ export function Feed({ feed, sessionId, loading, speaker, working, drafts, agent
     if (list.current) content.observe(list.current);
     return () => { box.disconnect(); content.disconnect(); };
   }, [listShown]);
+  // a question of the Inbox shown where it was asked: the thread stops following and goes there, once per request;
+  // older than the entries in the page, it is not found and the user is told
+  const toast = useSessions((s) => s.toast);
+  const focused = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focus || focus.key === focused.current || loading) return;
+    focused.current = focus.key;
+    const id = askEntry(entries, focus.at);
+    const target = id === null ? null : list.current?.querySelector<HTMLElement>(`[data-entry="${id}"]`);
+    if (!target) { toast('info', t.pm.inbox.notInFeed); return; }
+    stuck.current = false;
+    setAwayFrom(entries.length);
+    const details = target.querySelector('details');
+    if (details) details.open = true;
+    // at once, as the search does: a smooth scroll is cut short by the menu giving the focus back to its button
+    target.scrollIntoView({ block: 'center' });
+  }, [focus, entries, loading, toast]);
   const onScroll = (el: HTMLDivElement) => {
     if (Date.now() - gesture.current > 1000) return;
     stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;

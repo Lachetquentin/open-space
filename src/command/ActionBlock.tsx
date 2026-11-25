@@ -17,7 +17,7 @@ export function ActionBlock({ call }: { call: FeedItem & { kind: 'tool' } }) {
   const lines = open ? kept : kept.slice(0, SHOWN_LINES);
   const status = call.ok === null ? 'running' : call.ok ? 'done' : 'failed';
   return (
-    <li className="cp-feed__item" data-kind="action">
+    <li className="cp-feed__item" data-kind="action" data-entry={call.id}>
       <div className="cp-edit" data-status={status}>
         <p className="cp-edit__head"><code>{actionName(call.tool)}</code>{call.detail ? `(${call.detail})` : ''}</p>
         {call.ok === null ? <p className="cp-edit__summary">{words.running}</p>

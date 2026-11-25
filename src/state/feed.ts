@@ -2,6 +2,7 @@
 import { isSubagentHandback } from '../../shared/activity.ts';
 import { pmMessageKind, type ReportKind } from '../../shared/pm.ts';
 import type { BranchNews, FileDiff, LoggedEvent, PlanItem, SentFile, ToolOutput, UploadedFile } from '../../shared/protocol.ts';
+import { MCP_SERVER_NAME } from '../../shared/triggers.ts';
 import { t } from '../i18n/index.ts';
 
 /** `agent`: the sub-agent that said or did it (its id), null for the session's own agent; `author` is its name. */
@@ -220,6 +221,28 @@ export function threadOf(items: readonly FeedItem[], agent: string | null, detai
     else entries.push({ id: item.id, kind: 'tools', tools: [item] });
   }
   return entries;
+}
+
+/** pm_ask as Claude Code names it, the PM's tool that asks the user a question of its plan. */
+const PM_ASK_TOOL = `mcp__${MCP_SERVER_NAME}__pm_ask`;
+/** How far from a question's time its pm_ask call may be: the call is logged about when the server writes the question, before or after. */
+const ASK_NEAR_MS = 30_000;
+
+/**
+ * Where a PM asked the question it wrote at `at`, among the entries of its thread (their ids): the actions holding the
+ * pm_ask call nearest that time, else the last thing it said before; null when neither is there (an older part of the log).
+ */
+export function askEntry(entries: readonly ThreadEntry[], at: number): number | null {
+  let nearest: { id: number; gap: number } | null = null;
+  for (const entry of entries) {
+    const calls = entry.kind === 'tools' ? entry.tools : entry.kind === 'action' ? [entry.call] : [];
+    for (const call of calls) {
+      const gap = Math.abs(call.at - at);
+      if (call.tool === PM_ASK_TOOL && gap <= ASK_NEAR_MS && (!nearest || gap < nearest.gap)) nearest = { id: entry.id, gap };
+    }
+  }
+  if (nearest) return nearest.id;
+  return entries.findLast((entry) => entry.kind === 'assistant' && entry.agent === null && entry.at <= at)?.id ?? null;
 }
 
 /** A tool's name as Claude Code writes it: "Bash", and an MCP server's tool as "claude-in-chrome - navigate (MCP)". */

@@ -1,7 +1,8 @@
 // A PM's Inbox, above its message field next to PendingStrip: the questions of its plan waiting for the user (their
 // answers as buttons, the recommended one marked; a field when it proposes none), the tasks they block, what its last
-// turn finished; the snoozed and settled questions in two drawers. Shown while the server sends the PM's summary (the PM
-// setting on), drawn from the plan it sends (usePmDetail) and nothing else: an answer taken leaves when the plan comes back.
+// turn finished; the snoozed and settled questions and the closed tasks in three drawers; a question shown where it was
+// asked in the conversation (ShowInFeedContext). Shown while the server sends the PM's summary (the PM setting on), drawn
+// from the plan it sends (usePmDetail) and nothing else: an answer taken leaves when the plan comes back.
 import { use, useEffect, useState } from 'react';
 import { fullAskTag, itemTag, type PmAsk, type PmItem } from '../../shared/pm.ts';
 import type { PmDetail, SessionInfo } from '../../shared/protocol.ts';
@@ -9,9 +10,10 @@ import { MAX_TIMER_MS } from '../../shared/timers.ts';
 import { t } from '../i18n/index.ts';
 import { resetLabel } from '../lib/format.ts';
 import { blockingAsks, inAnHour, type InboxRow, pmInbox, tomorrowMorning } from '../state/pm-inbox.ts';
-import { pmAskAction, usePmDetail } from '../state/usePmDetail.ts';
+import { pmArchive, pmAskAction, usePmDetail } from '../state/usePmDetail.ts';
 import { useSessions } from '../state/sessions.ts';
-import { CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, CopyIcon, InboxIcon, StarIcon, SunriseIcon } from './Icons.tsx';
+import { ShowInFeedContext } from './Feed.tsx';
+import { CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, CopyIcon, InboxIcon, MessageIcon, StarIcon, SunriseIcon } from './Icons.tsx';
 import { ActionMenu } from './ModWindows.tsx';
 import { WindowCompactContext } from './useWindowDrag.ts';
 import { usePhone } from '../lib/phone.ts';
@@ -25,7 +27,7 @@ export function PmInbox({ session }: { session: SessionInfo }) {
   const small = use(WindowCompactContext);
   const phone = usePhone();
   const [folded, setFolded] = useState(small || phone);
-  const [drawer, setDrawer] = useState<'snoozed' | 'settled' | null>(null);
+  const [drawer, setDrawer] = useState<'snoozed' | 'settled' | 'closed' | null>(null);
   // read at each render: the server sends the plan again when a snooze ends, and this page's own timer below covers a
   // clock a little behind the server's
   const inbox = detail ? pmInbox(detail, Date.now()) : null;
@@ -58,7 +60,7 @@ export function PmInbox({ session }: { session: SessionInfo }) {
             {inbox.rows.map((row) => <Row key={rowKey(row)} pm={session.id} row={row} detail={detail} />)}
           </ul>
           {inbox.more > 0 && <p className="cp-pm-inbox__more">{words.more(inbox.more)}</p>}
-          {(inbox.snoozed.length > 0 || inbox.settled.length > 0) && (
+          {(inbox.snoozed.length > 0 || inbox.settled.length > 0 || inbox.closed.length > 0) && (
             <div className="cp-pm-inbox__drawers">
               {inbox.snoozed.length > 0 && (
                 <button type="button" className="cp-pm-inbox__drawer" aria-expanded={drawer === 'snoozed'} onClick={() => setDrawer(drawer === 'snoozed' ? null : 'snoozed')}>{words.snoozed(inbox.snoozed.length)}</button>
@@ -66,10 +68,14 @@ export function PmInbox({ session }: { session: SessionInfo }) {
               {inbox.settled.length > 0 && (
                 <button type="button" className="cp-pm-inbox__drawer" aria-expanded={drawer === 'settled'} onClick={() => setDrawer(drawer === 'settled' ? null : 'settled')}>{words.settled(inbox.settled.length)}</button>
               )}
+              {inbox.closed.length > 0 && (
+                <button type="button" className="cp-pm-inbox__drawer" aria-expanded={drawer === 'closed'} onClick={() => setDrawer(drawer === 'closed' ? null : 'closed')}>{words.closed(inbox.closed.length)}</button>
+              )}
             </div>
           )}
           {drawer === 'snoozed' && inbox.snoozed.length > 0 && <Snoozed pm={session.id} asks={inbox.snoozed} />}
           {drawer === 'settled' && inbox.settled.length > 0 && <Settled pm={session.id} asks={inbox.settled} />}
+          {drawer === 'closed' && inbox.closed.length > 0 && <Closed pm={session.id} items={inbox.closed} />}
         </>
       )}
     </section>
@@ -100,6 +106,8 @@ function ItemRow({ item, note, kind }: { item: PmItem; note: string; kind: 'bloc
 /** An open question: its answers as buttons, or a field for an answer of the user's own; its menu. */
 function AskRow({ pm, ask }: { pm: string; ask: PmAsk }) {
   const toast = useSessions((s) => s.toast);
+  // in a session's panel, by its conversation
+  const showInFeed = use(ShowInFeedContext);
   const [typed, setTyped] = useState('');
   // one answer per question: the buttons and the field wait for the plan to bring the row away
   const [sent, setSent] = useState(false);
@@ -128,6 +136,7 @@ function AskRow({ pm, ask }: { pm: string; ask: PmAsk }) {
             { label: words.snoozeHour, title: words.snoozeHour, icon: <ClockIcon />, run: () => pmAskAction(pm, ask.no, 'snooze', { until: inAnHour(Date.now()) }) },
             { label: words.snoozeMorning, title: words.snoozeMorning, icon: <SunriseIcon />, run: () => pmAskAction(pm, ask.no, 'snooze', { until: tomorrowMorning(Date.now()) }) },
             { label: t.pm.ask.dismiss, title: words.dismissTitle, icon: <CloseIcon />, run: dismiss },
+            ...(showInFeed ? [{ label: words.showInFeed, title: words.showInFeedTitle, icon: <MessageIcon />, run: () => showInFeed(ask.createdAt) }] : []),
             { label: t.pm.ask.copyTag(tag), title: t.pm.ask.copyTag(tag), icon: <CopyIcon />, run: copy },
           ]}
         />
@@ -199,5 +208,27 @@ function Settled({ pm, asks }: { pm: string; asks: PmAsk[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** The tasks finished or dropped and not archived, as the Projet section ends with them; « Tout archiver » takes them all away. */
+function Closed({ pm, items }: { pm: string; items: PmItem[] }) {
+  const words = t.pm.project;
+  return (
+    <div className="cp-pm-inbox__closed">
+      <ul className="cp-pm-inbox__list" data-drawer="closed">
+        {items.map((item) => (
+          <li key={item.no} className="cp-pm-inbox__row" data-kind="finished">
+            <p className="cp-pm-inbox__line">
+              <span className="cp-pm-inbox__tag">{itemTag(item.no)}</span>
+              <span className="cp-pm-inbox__text">{item.title}</span>
+              {item.state === 'finished' && <CheckIcon />}
+            </p>
+            <p className="cp-pm-inbox__note">{item.state === 'dropped' ? words.dropped : item.done || t.pm.inbox.done}</p>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="cp-button" data-size="small" title={words.archiveAllTitle} onClick={() => pmArchive(pm, 0)}>{words.archiveAll}</button>
+    </div>
   );
 }

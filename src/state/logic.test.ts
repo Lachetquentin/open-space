@@ -6,7 +6,7 @@ import { backgroundLabel, backgroundWork, contextLevel, pauseLabel, stateLabel, 
 import { asideQuestion, commandSuggestions, findCommands, ownCommand, withOwnCommands, hintValues, nativeView, tuning, commandAt, typedName } from './commands.ts';
 import { diffRows } from './diff.ts';
 import { addTo, fitColumns, FOCUS_TILING, isFull, maxColumns, nextFocus, placement, removeFrom, replaceIn, retile } from './stack.ts';
-import { answerFromEnd, buildFeed, conversationMarkdown, publishedPages, threadOf, toolSummary, currentTurn, turnPhase, turnWord, runningShells, type FeedItem } from './feed.ts';
+import { answerFromEnd, askEntry, buildFeed, conversationMarkdown, publishedPages, threadOf, toolSummary, currentTurn, turnPhase, turnWord, runningShells, type FeedItem } from './feed.ts';
 import { matchFolders } from './folders.ts';
 import { appendLive, CLIENT_LOG_LIMIT, mergeLog } from './log.ts';
 import { attentionKind, attentionQueue, newlyWaiting, otherSessions, tabTitle } from './queue.ts';
@@ -693,6 +693,28 @@ describe('project managers in the page', () => {
     assert.deepEqual(watchedPms(), []);
   });
 
+  describe('the place in its thread where it asked a question', () => {
+    const said = (id: number, at: number): FeedItem => ({ id, kind: 'assistant', at, text: `said ${id}`, author: null, agent: null });
+    const call = (id: number, at: number, tool: string): FeedItem => ({ id, kind: 'tool', at, tool, detail: '', author: null, agent: null, ok: true, callId: `c${id}` });
+    const ASK = 'mcp__open-space__pm_ask';
+    const items = [said(1, 100), call(2, 150, 'Read'), call(3, 200, ASK), said(4, 300), call(5, 400, 'Bash'), call(6, 90_000, ASK)];
+
+    it('is the actions holding its pm_ask call, the one nearest the question, even logged just after it', () => {
+      for (const detailed of [false, true]) {
+        const entries = threadOf(items, null, detailed);
+        const where = askEntry(entries, 195);
+        const entry = entries.find((one) => one.id === where);
+        const calls = entry?.kind === 'tools' ? entry.tools : entry?.kind === 'action' ? [entry.call] : [];
+        assert.ok(calls.some((one) => one.id === 3), `detailed: ${detailed}`);
+      }
+    });
+
+    it('is the last thing the PM said before the question when no pm_ask call is near it', () => {
+      assert.equal(askEntry(threadOf(items, null), 40_000), 4);
+      assert.equal(askEntry(threadOf([said(4, 300)], null), 50), null, 'nothing before it');
+    });
+  });
+
   describe('its Inbox', () => {
     const ask = (no: number, extra: Partial<PmAsk> = {}): PmAsk => ({ no, title: `Q${no}`, detail: '', answers: [], holds: false, state: 'open', createdAt: no, ...extra });
     const item = (no: number, extra: Partial<PmItem> = {}): PmItem => ({
@@ -725,6 +747,7 @@ describe('project managers in the page', () => {
         asks: [ask(1, { item: 1, holds: true }), ask(2, { item: 2, holds: true, snoozedUntil: 99 })],
       }), 0);
       assert.deepEqual(rows(inbox), ['Q1', 'blocked:W2', 'finished:W3']);
+      assert.deepEqual(inbox.closed.map((one) => one.no), [3, 4], 'its drawer: every finished task not archived, from any turn');
     });
 
     it('shows four rows at most, questions first, and counts the others', () => {
