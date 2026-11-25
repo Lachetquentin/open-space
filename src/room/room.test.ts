@@ -259,6 +259,92 @@ describe('who is in the room', () => {
     assert.equal(planOffice([finished], {}, NOBODY).people[0].status, 'finished');
     assert.equal(planOffice([finished], { a: 9 }, NOBODY).people[0].status, null);
   });
+
+  it('shows a decision over a PM with a question open, seen or not', () => {
+    const lead = session('pm', 'wait', { pm: true, lastSeq: 9, pmSummary: { items: 1, asks: 1, workers: 0, working: 0, line: 'yours' } });
+    assert.equal(planOffice([lead], { pm: 9 }, NOBODY).people[0].status, 'decision');
+  });
+});
+
+describe('a worker reporting to its PM', () => {
+  const walkFor = (scene: Scene, ms: number) => { for (let elapsed = 0; elapsed < ms; elapsed += 50) scene.step(50); };
+  const summary = { items: 1, asks: 0, workers: 1, working: 1, line: 'working' as const };
+  const lead = (extra: Partial<SessionInfo> = {}) => session('pm', 'wait', { pm: true, pmSummary: summary, ...extra });
+  const worker = (turns: number, extra: Partial<SessionInfo> = {}) => session('w', 'wait', { pmOf: 'pm', turns, lastSeq: turns, ...extra });
+  /** The office with the PM at its desk and the worker at work at its own; then the worker's turn ends (`after`). */
+  const officeWith = (before: readonly SessionInfo[], after: readonly SessionInfo[], { walks = true, instant = true } = {}) => {
+    const scene = officeScene();
+    scene.reportWalks = walks;
+    scene.sync(planOffice(before, {}, scene.seats()), instant);
+    scene.sync(planOffice(after, {}, scene.seats()), false);
+    return scene;
+  };
+  const atWork = worker(1, { state: 'work' });
+
+  it('walks to its PM after a turn, stands there about two seconds facing it, then sits back at its own desk', () => {
+    const scene = officeWith([lead(), atWork], [lead(), worker(2)]);
+    const w = scene.characters.get('w')!, pm = scene.characters.get('pm')!;
+    const seat = w.seat;
+    assert.equal(w.phase, 'reporting');
+    for (let elapsed = 0; w.path.length > 0 && elapsed < 15_000; elapsed += 50) scene.step(50);
+    assert.ok(distance(w.position, pm.position) < 1.5, 'beside the PM');
+    assert.ok((pm.position.x - w.position.x) * w.heading.x + (pm.position.y - w.position.y) * w.heading.y > 0, 'turned to the PM');
+    walkFor(scene, 1500);
+    assert.equal(w.phase, 'reporting', 'still there');
+    walkFor(scene, 1000);
+    assert.equal(w.phase, 'entering', 'on the way back');
+    walkFor(scene, 15_000);
+    assert.equal(w.phase, 'seated');
+    assert.equal(w.seat, seat);
+    assert.ok(close(w.position, OFFICE_FLOOR.seatPosition(seat)));
+  });
+
+  it('stays at its desk when nobody would take its report there', () => {
+    const cases: [string, SessionInfo[], SessionInfo[], { walks?: boolean; instant?: boolean }?][] = [
+      ['the PM resting, in the break room', [lead({ resting: true, state: 'closed' }), atWork], [lead({ resting: true, state: 'closed' }), worker(2)]],
+      ['the PM closed, still in the office for its question', [lead({ state: 'closed', pmSummary: { ...summary, asks: 1 } }), atWork], [lead({ state: 'closed', pmSummary: { ...summary, asks: 1 } }), worker(2)]],
+      ['the PM setting off: no summary', [lead({ pmSummary: undefined }), atWork], [lead({ pmSummary: undefined }), worker(2)]],
+      ['the PM still walking in', [atWork], [lead(), worker(2)]],
+      ['reduced motion', [lead(), atWork], [lead(), worker(2)], { walks: false }],
+      ['a turn the usage limit paused', [lead(), atWork], [lead(), worker(2, { pausedUntil: 9_999_999_999 })]],
+    ];
+    for (const [why, before, after, options] of cases) {
+      const scene = officeWith(before, after, options);
+      assert.equal(scene.characters.get('w')!.phase, 'seated', why);
+    }
+  });
+
+  it('walks once: another turn finished meanwhile does not keep it there longer', () => {
+    const scene = officeWith([lead(), atWork], [lead(), worker(2)]);
+    const w = scene.characters.get('w')!;
+    for (let elapsed = 0; w.path.length > 0 && elapsed < 15_000; elapsed += 50) scene.step(50);
+    walkFor(scene, 1500);
+    scene.sync(planOffice([lead(), worker(3)], {}, scene.seats()), false);
+    walkFor(scene, 1000);
+    assert.equal(w.phase, 'entering');
+  });
+
+  it('goes back to its desk when its PM leaves for the break room on the way', () => {
+    const scene = officeWith([lead(), atWork], [lead(), worker(2)]);
+    scene.step(200);
+    scene.sync(planOffice([lead({ resting: true, state: 'closed' }), worker(2)], {}, scene.seats()), false);
+    scene.step(50);
+    assert.equal(scene.characters.get('w')!.phase, 'entering');
+  });
+
+  it('finds room to stand beside every desk, off the furniture and the chairs, one spot per worker', () => {
+    const chairs = new Set(OFFICE_FLOOR.layout.seats.map((seat) => `${Math.floor(seat.x)},${Math.floor(seat.y)}`));
+    const off = (point: Point) => !chairs.has(`${Math.floor(point.x)},${Math.floor(point.y)}`) && offFurniture([point]);
+    for (let seat = 0; seat < SEAT_COUNT; seat++) {
+      const from = OFFICE_FLOOR.seatPosition((seat + 5) % SEAT_COUNT);
+      const first = OFFICE_FLOOR.standingBeside(seat, from)!;
+      assert.ok(first && off(first), `seat ${seat}`);
+      assert.ok(distance(first, OFFICE_FLOOR.seatPosition(seat)) < 1.5, `seat ${seat}: next to it`);
+      assert.ok(offFurniture(OFFICE_FLOOR.route(from, first)), `seat ${seat}: the way there`);
+      const second = OFFICE_FLOOR.standingBeside(seat, from, [first]);
+      assert.ok(second && off(second) && !close(second, first), `seat ${seat}: a second worker`);
+    }
+  });
 });
 
 describe('scene', () => {

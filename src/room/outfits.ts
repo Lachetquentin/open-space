@@ -13,6 +13,8 @@ export interface Outfit {
   /** a tank top and swim briefs, flip-flops: the blanket comes off */
   swimwear?: boolean;
   waterGun?: boolean;
+  /** a clipboard in hand: a session acting as a project manager (cast.ts Person.pm), whatever the festival */
+  clipboard?: boolean;
 }
 
 export const NO_OUTFIT: Outfit = {};
@@ -55,4 +57,4 @@ export function wornOutfit(look: Look, outfit: Outfit): Outfit {
 }
 
 /** A stable key for the sprite cache. */
-export const outfitKey = (outfit: Outfit) => `${outfit.hat ?? ''}${outfit.hatColor ?? ''}${outfit.headphones ? 'h' : ''}${outfit.sunglasses ? 's' : ''}${outfit.swimwear ? 'w' : ''}${outfit.waterGun ? 'g' : ''}`;
+export const outfitKey = (outfit: Outfit) => `${outfit.hat ?? ''}${outfit.hatColor ?? ''}${outfit.headphones ? 'h' : ''}${outfit.sunglasses ? 's' : ''}${outfit.swimwear ? 'w' : ''}${outfit.waterGun ? 'g' : ''}${outfit.clipboard ? 'c' : ''}`;

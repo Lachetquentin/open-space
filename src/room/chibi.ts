@@ -1,6 +1,6 @@
 // The people of the room in chibi pixel art: a big head on a small body, 16 x 25 art pixels, drawn from a Look
 // (shared/look.ts). Each pose is drawn once on its own little canvas, outlined, and kept.
-import { CLOTH_COLORS, COSTUME_COLORS, DEFAULT_BACK_COLOR, HAIR_COLORS, MANNEQUIN, PEOPLE_INK as INK, SKIN_TONES } from '../design/people-palette.ts';
+import { CLIPBOARD, CLOTH_COLORS, COSTUME_COLORS, DEFAULT_BACK_COLOR, HAIR_COLORS, MANNEQUIN, PEOPLE_INK as INK, SKIN_TONES } from '../design/people-palette.ts';
 import { ROOM_PALETTE } from '../design/room-palette.ts';
 import { BEARD_STYLES, HAIR_STYLES, NO_GEAR, WARDROBE_HAIR, type Gear, type HairStyle, type Look } from '../../shared/look.ts';
 import { costumeSleeve, isCostumeHat, paintAccessory, paintCostumeHat, paintCostumeLegs, paintCostumeTop, paintRaisedSleeve, paintSmoke, underCostume, type Body, type CostumeHat } from './costumes.ts';
@@ -105,6 +105,16 @@ const HAT_PAINT: Readonly<Record<string, string>> = { r: F.red, w: F.fur, f: F.f
 const NEAR_ARM = { x: 1, elbowY: 19 };
 
 type Paint = (x: number, y: number, width: number, height: number, colour: string) => void;
+
+/** A project manager's clipboard, its sheet to us (b board, d its dark edge, c the clip, p the sheet, l its lines). */
+const CLIPBOARD_FRONT = ['.cc..', 'bccbb', 'bpppb', 'blllb', 'bpppb', 'bllpb', 'bbbbd'];
+/** The same seen from behind, past the hand: the edge of the board and its clip. */
+const CLIPBOARD_BACK = ['c.', 'bd', 'bd', 'bd', 'bd', 'bd'];
+const CLIPBOARD_PAINT: Readonly<Record<string, string>> = { b: CLIPBOARD.board, d: CLIPBOARD.boardDark, c: CLIPBOARD.clip, p: CLIPBOARD.paper, l: CLIPBOARD.line };
+
+function paintClipboard(P: (x: number, y: number, colour: string) => void, rows: readonly string[], x: number, y: number) {
+  for (const [line, row] of rows.entries()) [...row].forEach((letter, column) => { if (CLIPBOARD_PAINT[letter]) P(x + column, y + line, CLIPBOARD_PAINT[letter]); });
+}
 
 /** Halfway between two "#rrggbb" colours, as one. */
 const blend = (a: string, b: string) => `#${mix(rgb(a), rgb(b), 0.5).map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
@@ -253,6 +263,9 @@ function paint(worn: Look, frame: Frame, outfit: Outfit): HTMLCanvasElement {
         break;
       case 'none': if (front && !swim) { R(4, 15 + up, 3, 1, skin.shade); R(9, 15 + up, 3, 1, skin.shade); P(8, 18 + up, skin.dark); } else if (back) R(8, 14 + up, 1, 5, skin.shade); break;
     }
+    // a project manager's clipboard, under the arms so the near hand holds its edge; typing, it stands propped against
+    // that arm, above the desk
+    if (outfit.clipboard && !back) paintClipboard(P, CLIPBOARD_FRONT, -3, 14 + up + swing);
     // arms: bare, short sleeves and bare forearms, or long sleeves to the wrist
     const bareArms = look.top === 'none' || look.top === 'tank';
     const longSleeves = LONG_SLEEVES.has(look.top);
@@ -269,6 +282,7 @@ function paint(worn: Look, frame: Frame, outfit: Outfit): HTMLCanvasElement {
     });
     paintCostumeTop(R, P, dressed, body);
     paintWardrobeTop(R, P, dressed, body);
+    if (outfit.clipboard && back) paintClipboard(P, CLIPBOARD_BACK, 15, 15 + up - swing);
     if (look.watch && !back && !typing) R(1, 18 + up + swing, 2, 1, INK.watch);
     // a water gun in the near hand, pointing ahead, its tank on top
     if (outfit.waterGun && !back && !typing) {

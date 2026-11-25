@@ -22,14 +22,21 @@ const WALK_SPEED = 4.2;
 
 export interface Walker { position: Point; heading: Point; path: Point[]; blinkOffset: number }
 
-export type Phase = 'entering' | 'seated' | 'leaving' | 'carried';
+/** `reporting`: a worker gone to its project manager's desk after a turn, or standing there; it then walks back (`entering`). */
+export type Phase = 'entering' | 'seated' | 'leaving' | 'carried' | 'reporting';
+
+/** How long a worker stands at its project manager's desk to report, in ms. */
+const REPORT_MS = 2000;
 
 /** How far below the pointer the feet of someone carried hang, in canvas pixels: the pointer holds them by the chest. */
 const CARRY_HANG = 22;
 /** How near a seat (canvas pixels) the feet of someone carried must be for it to take them when let go. */
 const DROP_REACH = 30;
 
-export interface Character extends Walker { person: Person; seat: number; phase: Phase }
+/** A worker reporting: the person id of its project manager, and how long it still stands there once arrived. */
+interface Report { lead: string; left: number }
+
+export interface Character extends Walker { person: Person; seat: number; phase: Phase; report?: Report }
 
 /** Screen direction of a floor heading (the grid is drawn rotated by 45 degrees). */
 export function directionOf(heading: Point): Direction {
@@ -65,6 +72,8 @@ export class Scene {
   petLeftBy: Passage | null = null;
   /** the crew without a session dropping by (the office only) */
   readonly visits: Visits | null;
+  /** a worker who finishes a turn walks over to its project manager's desk to report: the office, motion not reduced (RoomView) */
+  reportWalks = false;
   /** the room's own clock, in ms */
   time = 0;
   /** the column of light round the user coming in through the teleporter, and when it started (no waiting in it, either way) */
@@ -118,6 +127,7 @@ export class Scene {
 
   /** Brings the room in line with the plan. `instant`: newcomers are already seated (first view of the room). */
   sync(plan: RoomPlan, instant: boolean) {
+    const finished: Character[] = [];
     for (const person of plan.people) {
       const seat = plan.seats.get(person.id)!;
       const character = this.characters.get(person.id);
@@ -129,13 +139,15 @@ export class Scene {
         });
         continue;
       }
+      // a turn finished at the desk (a turn paused by the usage limit still counts as at work)
+      if (character.phase === 'seated' && (person.turns ?? 0) > (character.person.turns ?? 0) && person.status !== 'working') finished.push(character);
       character.person = person;
       if (character.phase === 'carried') continue;
       if (character.phase === 'leaving' || character.seat !== seat) {
         character.seat = seat;
         character.path = this.floor.pathToSeat(character.position, seat);
         character.phase = 'entering';
-      }
+      } else if (character.phase === 'reporting' && person.status !== null && person.status !== 'finished') this.backToSeat(character);
     }
     const planned = new Set(plan.people.map((person) => person.id));
     for (const character of this.characters.values()) {
@@ -144,15 +156,56 @@ export class Scene {
       character.phase = 'leaving';
       character.path = this.floor.pathToDoor(character.position);
     }
+    // once everyone is up to date: their project manager may have just left or closed
+    for (const worker of finished) this.goReport(worker);
+  }
+
+  /** The project manager a worker reports to, while it sits at its desk in this room, open. */
+  private leadAtDesk(worker: Character): Character | null {
+    const lead = worker.person.pmOf === undefined ? undefined : this.characters.get(worker.person.pmOf);
+    return lead && lead.phase === 'seated' && lead.person.pm === 'open' ? lead : null;
+  }
+
+  /** Sends a worker who finished a turn at its desk to its project manager's, if it is there and walks are on. */
+  private goReport(worker: Character) {
+    const lead = this.leadAtDesk(worker);
+    if (!this.reportWalks || worker.phase !== 'seated' || !lead) return;
+    const others = [...this.characters.values()].filter((other) => other.phase === 'reporting').map((other) => other.path.at(-1) ?? other.position);
+    const spot = this.floor.standingBeside(lead.seat, worker.position, others);
+    if (!spot) return;
+    worker.phase = 'reporting';
+    worker.report = { lead: lead.person.id, left: REPORT_MS };
+    worker.path = this.floor.route(worker.position, spot);
+  }
+
+  /** True once a reporting worker is done: it stood there long enough, or its project manager is no longer at its desk. */
+  private reported(worker: Character, ms: number): boolean {
+    const lead = this.leadAtDesk(worker), report = worker.report;
+    if (!lead || !report || lead.person.id !== report.lead) return true;
+    if (worker.path.length > 0) return false;
+    report.left -= ms;
+    return report.left <= 0;
+  }
+
+  private backToSeat(worker: Character) {
+    worker.phase = 'entering';
+    worker.report = undefined;
+    worker.path = this.floor.pathToSeat(worker.position, worker.seat);
   }
 
   step(ms: number) {
     this.time += ms;
     if (this.beam && this.time - this.beam.at >= BEAM_MS) this.beam = null;
     for (const [id, character] of this.characters) {
+      // standing at the desk has no path left to walk: its time runs before the walk below
+      if (character.phase === 'reporting' && this.reported(character, ms)) this.backToSeat(character);
       if (!advance(character, ms)) continue;
       if (character.phase === 'leaving') this.characters.delete(id);
-      else if (character.phase === 'entering') {
+      else if (character.phase === 'reporting') {
+        // arrived: turned to the project manager
+        const lead = this.characters.get(character.report!.lead)!;
+        character.heading = { x: lead.position.x - character.position.x, y: lead.position.y - character.position.y };
+      } else if (character.phase === 'entering') {
         character.phase = 'seated';
         character.heading = this.floor.seatFacing(character.seat);
       }

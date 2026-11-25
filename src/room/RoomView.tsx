@@ -172,9 +172,12 @@ export function RoomView({ room, day }: { room: RoomKind; day: FestivalDay }) {
   }, [scene]);
   // what the festival puts on everyone (a sub-agent's head, in a tag, is drawn without it)
   // the automatons are robots of their role (robot.ts), everyone else a chibi in the festival's outfit
-  const [sprites] = useState(() => withRobots(chibiSprites(lookFor, (personId) => personId === PLAYER_ID
-    ? outfitFor(festival, selfName(crewRef.current), true, guests)
-    : outfitFor(festival, scene.nameOf(personId), false, guests)), (personId) => automatonLookOf(scene, personId)));
+  // a project manager holds a clipboard, whatever it wears
+  const [sprites] = useState(() => withRobots(chibiSprites(lookFor, (personId) => {
+    if (personId === PLAYER_ID) return outfitFor(festival, selfName(crewRef.current), true, guests);
+    const festive = outfitFor(festival, scene.nameOf(personId), false, guests);
+    return scene.characters.get(personId)?.person.pm ? { ...festive, clipboard: true } : festive;
+  }), (personId) => automatonLookOf(scene, personId)));
   // a click reaches someone up to the top of their hat
   useEffect(() => { scene.heightOf = (personId) => sprites.height(STANDING, personId); }, [scene, sprites]);
   const [furniture] = useState(() => pixelFurniture(boardContent(festival, guests)));
@@ -196,6 +199,9 @@ export function RoomView({ room, day }: { room: RoomKind; day: FestivalDay }) {
   const { project } = useProjects();
   const ghosts = useRef<ReadonlySet<string>>(new Set());
   ghosts.current = useMemo(() => new Set(list.filter((session) => !inProject(session, project)).map((session) => session.id)), [list, project]);
+
+  // a worker walks over to report to its project manager in the office, unless motion is reduced
+  useEffect(() => { scene.reportWalks = room === 'office' && !reducedMotion; }, [scene, room, reducedMotion]);
 
   // the people already there when the room opens are seated at once; later ones walk in
   useEffect(() => {
