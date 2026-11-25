@@ -17,7 +17,7 @@ import { isModId, PHONE_MODS_PORT } from '../shared/mods.ts';
 import { TESTERS } from './browser.ts';
 import { MAX_HOOK_BODY, type TriggerRunOutcome } from '../shared/triggers.ts';
 import { MAX_MCP_BODY, MAX_MCP_BODY_OTHER, type Caller } from './mcp.ts';
-import { PM_PAGE_CSP, pageDocument } from './pm-pages.ts';
+import { pageDocument } from './pm-pages.ts';
 
 /** The file types served: the compiled UI's, and what sessions send or publish. */
 const TYPES: Record<string, string> = {
@@ -253,19 +253,21 @@ export function createWebServer(options: WebServerOptions) {
 
   /**
    * GET /pm-pages/<pm>/<page>: a PM's live page, in Open Space's window (an iframe sandboxed without allow-same-origin) or
-   * opened on its own, to a browser holding the session cookie. Its kit before it, its policy with it (PM_PAGE_CSP: its
-   * sandbox is there even outside the iframe); asked again each time, since a page is answered and retired.
+   * opened on its own, to a browser holding the session cookie. Its kit before it, its policy with it (its sandbox is there
+   * even outside the iframe, its nonce new each time: only the kit's script runs); asked again each time, since a page is
+   * answered and retired.
    */
   async function servePmPage(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
     if (!hasSessionCookie(policy, req)) { res.writeHead(401).end(); return; }
     const [pm = '', page = '', ...rest] = url.pathname.slice('/pm-pages/'.length).split('/');
     const html = options.pmPage && req.method === 'GET' && !rest.length ? await options.pmPage(pm, page) : null;
     if (html === null) { res.writeHead(404, { 'Cache-Control': 'no-store' }).end(); return; }
+    const { csp, body } = pageDocument(html);
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
-      'Content-Security-Policy': PM_PAGE_CSP, 'Referrer-Policy': 'no-referrer',
+      'Content-Security-Policy': csp, 'Referrer-Policy': 'no-referrer',
     });
-    res.end(pageDocument(html));
+    res.end(body);
   }
 
   /**

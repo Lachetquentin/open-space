@@ -14,13 +14,13 @@ export const planOf = (detail: PmDetail): PmFile => ({ ...detail, reports: [] })
 // a dropped task ends with the finished ones, which the user archives together
 const sectionOf = (status: ShownStatus): ProjectSection => (status === 'dropped' ? 'done' : status);
 
-/** The tasks not archived, in the sections that hold some, in the order of PROJECT_SECTIONS, each in the plan's order. */
-export function itemSections(detail: PmDetail): { section: ProjectSection; items: PmItem[] }[] {
+/** The tasks not archived at `now`, in the sections that hold some, in the order of PROJECT_SECTIONS, each in the plan's order. */
+export function itemSections(detail: PmDetail, now: number): { section: ProjectSection; items: PmItem[] }[] {
   const plan = planOf(detail);
   const bySection = new Map<ProjectSection, PmItem[]>();
   for (const item of detail.items) {
     if (item.archived) continue;
-    const section = sectionOf(itemStatus(item, plan, detail.live));
+    const section = sectionOf(itemStatus(item, plan, detail.live, now));
     bySection.set(section, [...(bySection.get(section) ?? []), item]);
   }
   return PROJECT_SECTIONS.flatMap((section) => {

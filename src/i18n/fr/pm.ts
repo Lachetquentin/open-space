@@ -67,15 +67,13 @@ export const pm = {
     no: 'Non',
     none: '—',
   },
-  /** above a PM's message field: its questions, the tasks they block, what its last turn finished */
+  /** above a PM's message field: its questions, its pages to fill, what its last turn finished */
   inbox: {
     label: 'À décider',
-    blocked: (count: number) => plural(count, 'tâche bloquée', 'tâches bloquées'),
     finished: (count: number) => plural(count, 'tâche finie', 'tâches finies'),
     pages: (count: number) => plural(count, 'page à remplir', 'pages à remplir'),
     nothing: 'Rien à décider',
     more: (count: number) => `et ${count} de plus`,
-    blockedBy: (tags: string) => `Bloquée par ${tags}`,
     done: 'Finie',
     typeAnswer: 'Ta réponse',
     answerLabel: (tag: string) => `Ta réponse à ${tag}`,

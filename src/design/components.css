@@ -455,7 +455,7 @@ input[type='range']:focus-visible { outline-offset: 4px; border-radius: 999px; }
 .cp-detail, .cp-launcher {
   border-radius: var(--radius-xl); overflow: hidden; background: var(--glass-surface); border: var(--border-width) solid var(--glass-edge); box-shadow: var(--glass-shadow);
 }
-.cp-detail, .cp-launcher, .cp-status {
+.cp-detail, .cp-launcher, .cp-status, .cp-list__body > .cp-pm {
   --color-surface: var(--glass-tint); --color-surface-sunken: rgb(5 7 16 / 0.32); --color-surface-raised: rgb(255 255 255 / 0.08);
   --color-border: rgb(255 255 255 / 0.07); --color-border-strong: rgb(255 255 255 / 0.13);
 }
@@ -1647,8 +1647,8 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 .cp-pm__task-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .cp-pm__task[data-open='true'] .cp-pm__task-title { white-space: normal; }
 .cp-pm__tag { flex: none; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-muted); }
-.cp-pm__task-body { display: grid; gap: var(--space-1); padding: 0 var(--space-2) var(--space-2); font-size: var(--text-xs); }
-.cp-pm__now { margin: 0; }
+.cp-pm__task-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); padding: 0 var(--space-2) var(--space-2); font-size: var(--text-xs); }
+.cp-pm__now { margin: 0; overflow-wrap: anywhere; }
 .cp-pm__steps li { display: flex; align-items: baseline; gap: var(--space-1); }
 .cp-pm__steps li[data-done='true'] { color: var(--color-text-muted); }
 .cp-pm__steps li[data-chore='true'] { font-style: italic; }
@@ -2332,6 +2332,8 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 }
 .cp-list__time { flex: none; margin-left: auto; font-size: var(--text-xs); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 .cp-list__empty { margin: 0; padding: var(--space-3); font-size: var(--text-sm); color: var(--color-text-muted); }
+/* the plan of the PM in front (PmProject.tsx), after the groups, parted from them by a line, scrolling with the list */
+.cp-list__body > .cp-pm { min-width: 0; padding: var(--space-3) var(--space-3) 0; border-top: var(--border-width) solid var(--color-border); }
 
 /* ── Search palette (⌘K): high on the screen, one field, results by kind ── */
 /* the magnifier and its shortcut */

@@ -136,7 +136,7 @@ describe('reading a PM file', () => {
 
 describe('the status shown for a task', () => {
   const linked = (session: string) => worker(session, { item: 1 });
-  const cases: { name: string; task: PmItem; file?: Partial<PmFile>; live?: WorkerLive[]; expected: ShownStatus }[] = [
+  const cases: { name: string; task: PmItem; file?: Partial<PmFile>; live?: WorkerLive[]; now?: number; expected: ShownStatus }[] = [
     { name: 'dropped', task: item(1, { state: 'dropped' }), expected: 'dropped' },
     {
       name: 'finished, even with its worker at work', task: item(1, { state: 'finished' }),
@@ -147,6 +147,9 @@ describe('the status shown for a task', () => {
       name: 'an open question that holds it, even with its worker waiting', task: item(1), file: { asks: [ask(1, { item: 1, holds: true })], workers: [linked('w')] },
       live: [{ session: 'w', working: false, waiting: true }], expected: 'blocked',
     },
+    { name: 'an open question that holds it, snoozed until later', task: item(1), file: { turn: 5, asks: [ask(1, { item: 1, holds: true, snoozedUntil: 500 })] }, now: 200, expected: 'idle' },
+    { name: 'an open question that holds it, its snooze over', task: item(1), file: { turn: 5, asks: [ask(1, { item: 1, holds: true, snoozedUntil: 200 })] }, now: 200, expected: 'blocked' },
+    { name: 'an open question that holds it, snoozed, for the PM (no time given)', task: item(1), file: { turn: 5, asks: [ask(1, { item: 1, holds: true, snoozedUntil: 500 })] }, expected: 'blocked' },
     { name: 'an open question that does not hold it', task: item(1), file: { turn: 5, asks: [ask(1, { item: 1 })] }, expected: 'idle' },
     { name: 'a holding question already answered', task: item(1), file: { turn: 5, asks: [ask(1, { item: 1, holds: true, state: 'answered' })] }, expected: 'idle' },
     {
@@ -182,9 +185,9 @@ describe('the status shown for a task', () => {
     ]),
     { name: 'put off for later', task: item(1, { state: 'later' }), file: { turn: 5 }, expected: 'later' },
   ];
-  for (const { name, task, file, live, expected } of cases) {
+  for (const { name, task, file, live, now, expected } of cases) {
     it(`${expected}: ${name}`, () => {
-      assert.equal(itemStatus(task, pm({ ...file, items: [task, ...(file?.items ?? [])] }), live ?? []), expected);
+      assert.equal(itemStatus(task, pm({ ...file, items: [task, ...(file?.items ?? [])] }), live ?? [], now), expected);
     });
   }
 });
@@ -233,6 +236,8 @@ describe('the summary of a PM in the list', () => {
 
   const lines: { name: string; file: Partial<PmFile>; live?: WorkerLive[]; expected: PmLine }[] = [
     { name: 'a task held by an open question, even with a worker waiting', file: { items: [item(1)], asks: [ask(1, { item: 1, holds: true })], workers: [worker('w', { item: 1 })] }, live: [live('w', 'waiting')], expected: 'blocked' },
+    { name: 'a task held by a question snoozed until later', file: { items: [item(1)], asks: [ask(1, { item: 1, holds: true, snoozedUntil: 500 })] }, expected: 'calm' },
+    { name: 'a task held by a question whose snooze is over', file: { items: [item(1)], asks: [ask(1, { item: 1, holds: true, snoozedUntil: 200 })] }, expected: 'blocked' },
     { name: 'a question for the user', file: { asks: [ask(1)], workers: [worker('w')] }, live: [live('w', 'working')], expected: 'yours' },
     { name: 'a worker waiting for the user', file: { workers: [worker('w'), worker('v')] }, live: [live('w', 'waiting'), live('v', 'working')], expected: 'yours' },
     { name: 'a worker at work', file: { workers: [worker('w')] }, live: [live('w', 'working')], expected: 'working' },

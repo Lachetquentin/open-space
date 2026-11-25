@@ -91,10 +91,11 @@ const tools: Record<PmToolName, Omit<Tool, 'name'>> = {
   pm_worker_stop: { description: 'Stops what one of your workers is doing (like Stop in Open Space); it keeps its conversation.', inputSchema: object({ session: WORKER, item: WORKER_ITEM }), annotations: write },
   pm_page_show: {
     description: 'Shows the user a page you write, which they open in a window of Open Space: to gather several answers at once (choices, fields, a table to fill, a mock-up to pick). '
-      + `The page is isolated: no network, no file of its own (images and fonts as data: only), its own inline <style> and <script> allowed; ${PM_LIMITS.pageBytes / 1024 / 1024} MB at most. `
-      + 'Open Space puts a small kit before it: readable default styles in its theme, and the answers gathered: each input, select and textarea, under its data-answer, else its name, else its id; '
-      + 'each choice, an element with data-answer and data-value (e.g. <button data-answer="layout" data-value="B">), one per data-answer unless data-multiple, data-submit on it to send at once. '
-      + 'A form\'s submit button, an element with data-submit, Enter in a form\'s field, or the Send button the kit adds when there is none sends them; your script may call OpenSpacePage.submit(answers). '
+      + 'The page is a form of plain HTML and CSS: no script of yours runs (neither <script> nor onclick), only Open Space\'s kit; for what a script would do, use <details>, :checked or :has(). '
+      + `It is isolated: no network, no file of its own (images and fonts as data: only), its own inline <style> allowed; ${PM_LIMITS.pageBytes / 1024 / 1024} MB at most. `
+      + 'The kit gives it readable default styles in Open Space\'s theme, and gathers the answers: each input, select and textarea, under its data-answer, else its name, else its id (give each a name); '
+      + 'each choice, an element with data-answer and data-value (e.g. <button data-answer="layout" data-value="B">), pressed on a click, one per data-answer unless data-multiple, data-submit on it to send at once. '
+      + 'A submit button (any <button> without type="button"), an element with data-submit, Enter in a form\'s field, or the Send button the kit adds when there is none sends them. '
       + 'They come back to you as a message, as JSON, once. A new page of the same source replaces the one still open. Returns its id.',
     inputSchema: object({
       html: string('The page: an HTML fragment or a whole document'), title: string('Short, shown on its window'),
