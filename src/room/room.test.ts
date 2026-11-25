@@ -314,6 +314,17 @@ describe('a worker reporting to its PM', () => {
     }
   });
 
+  it('walks once the sub-agents its turn left at work are done (its session open, the turn seen)', () => {
+    const seen = { w: 2 };
+    const scene = officeScene();
+    scene.reportWalks = true;
+    scene.sync(planOffice([lead(), atWork], seen, scene.seats()), true);
+    scene.sync(planOffice([lead(), worker(2, { subagents: [{ id: 't', name: 'Bob', type: 'Explore' }] })], seen, scene.seats()), false);
+    assert.equal(scene.characters.get('w')!.phase, 'seated');
+    scene.sync(planOffice([lead(), worker(2)], seen, scene.seats()), false);
+    assert.equal(scene.characters.get('w')!.phase, 'reporting');
+  });
+
   it('walks once: another turn finished meanwhile does not keep it there longer', () => {
     const scene = officeWith([lead(), atWork], [lead(), worker(2)]);
     const w = scene.characters.get('w')!;
@@ -332,17 +343,22 @@ describe('a worker reporting to its PM', () => {
     assert.equal(scene.characters.get('w')!.phase, 'entering');
   });
 
-  it('finds room to stand beside every desk, off the furniture and the chairs, one spot per worker', () => {
-    const chairs = new Set(OFFICE_FLOOR.layout.seats.map((seat) => `${Math.floor(seat.x)},${Math.floor(seat.y)}`));
-    const off = (point: Point) => !chairs.has(`${Math.floor(point.x)},${Math.floor(point.y)}`) && offFurniture([point]);
-    for (let seat = 0; seat < SEAT_COUNT; seat++) {
-      const from = OFFICE_FLOOR.seatPosition((seat + 5) % SEAT_COUNT);
-      const first = OFFICE_FLOOR.standingBeside(seat, from)!;
-      assert.ok(first && off(first), `seat ${seat}`);
-      assert.ok(distance(first, OFFICE_FLOOR.seatPosition(seat)) < 1.5, `seat ${seat}: next to it`);
-      assert.ok(offFurniture(OFFICE_FLOOR.route(from, first)), `seat ${seat}: the way there`);
-      const second = OFFICE_FLOOR.standingBeside(seat, from, [first]);
-      assert.ok(second && off(second) && !close(second, first), `seat ${seat}: a second worker`);
+  it('finds room to stand beside every desk, off the furniture and the chairs, one spot per worker, whatever the festival', () => {
+    for (const festival of [null, ...FESTIVALS]) {
+      const floor = new Floor(OFFICE, festival, true, true);
+      const blocked = blockedTiles(floor.layout.furniture);
+      const chairs = new Set(floor.layout.seats.map((seat) => `${Math.floor(seat.x)},${Math.floor(seat.y)}`));
+      const free = (point: Point) => !blocked.has(`${Math.floor(point.x)},${Math.floor(point.y)}`);
+      for (let seat = 0; seat < floor.seatCount; seat++) {
+        const why = `${festival}, seat ${seat}`;
+        const from = floor.seatPosition((seat + 5) % floor.seatCount);
+        const first = floor.standingBeside(seat, from)!;
+        assert.ok(first && free(first) && !chairs.has(`${Math.floor(first.x)},${Math.floor(first.y)}`), why);
+        assert.ok(distance(first, floor.seatPosition(seat)) < 1.5, `${why}: next to it`);
+        assert.ok(floor.route(from, first).every(free), `${why}: the way there`);
+        const second = floor.standingBeside(seat, from, [first]);
+        assert.ok(second && free(second) && !close(second, first), `${why}: a second worker`);
+      }
     }
   });
 });

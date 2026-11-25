@@ -36,7 +36,8 @@ const DROP_REACH = 30;
 /** A worker reporting: the person id of its project manager, and how long it still stands there once arrived. */
 interface Report { lead: string; left: number }
 
-export interface Character extends Walker { person: Person; seat: number; phase: Phase; report?: Report }
+/** `turnEnded`: a turn finished while its sub-agents or background commands still work: it reports once they are done. */
+export interface Character extends Walker { person: Person; seat: number; phase: Phase; report?: Report; turnEnded?: boolean }
 
 /** Screen direction of a floor heading (the grid is drawn rotated by 45 degrees). */
 export function directionOf(heading: Point): Direction {
@@ -139,8 +140,12 @@ export class Scene {
         });
         continue;
       }
-      // a turn finished at the desk (a turn paused by the usage limit still counts as at work)
-      if (character.phase === 'seated' && (person.turns ?? 0) > (character.person.turns ?? 0) && person.status !== 'working') finished.push(character);
+      // a turn finished, told once nothing of it works any more (a turn paused by the usage limit still counts as at work)
+      if ((person.turns ?? 0) > (character.person.turns ?? 0)) character.turnEnded = true;
+      if (character.turnEnded && person.status !== 'working') {
+        character.turnEnded = false;
+        if (character.phase === 'seated') finished.push(character);
+      }
       character.person = person;
       if (character.phase === 'carried') continue;
       if (character.phase === 'leaving' || character.seat !== seat) {
