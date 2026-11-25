@@ -4,7 +4,7 @@
 // turn finished; the snoozed and settled questions and the closed tasks in three drawers; a question shown where it was
 // asked in the conversation (ShowInFeedContext). Shown while the server sends the PM's summary (the PM setting on), drawn
 // from the plan it sends (usePmDetail) and nothing else: an answer taken leaves when the plan comes back.
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { fullAskTag, itemTag, type PmAsk, type PmItem, type PmPage } from '../../shared/pm.ts';
 import type { PmDetail, SessionInfo } from '../../shared/protocol.ts';
 import { MAX_TIMER_MS } from '../../shared/timers.ts';
@@ -131,17 +131,23 @@ function AskRow({ pm, ask }: { pm: string; ask: PmAsk }) {
   const showInFeed = use(ShowInFeedContext);
   const [typed, setTyped] = useState('');
   // one answer per question: the buttons and the field wait for the plan to bring the row away
+  // (the ref is what guards: a double click comes before the next render)
   const [sent, setSent] = useState(false);
+  const sentRef = useRef(false);
   // a refused answer changes nothing in the plan: the row is still there a while later, and answers again (the server
   // still takes one answer only)
   useEffect(() => {
     if (!sent) return;
-    const timer = setTimeout(() => setSent(false), ANSWER_RETRY_MS);
+    const timer = setTimeout(() => { sentRef.current = false; setSent(false); }, ANSWER_RETRY_MS);
     return () => clearTimeout(timer);
   }, [sent]);
   const words = t.pm.inbox;
   const tag = fullAskTag(ask);
-  const answer = (text: string) => { if (sent || !text.trim()) return; setSent(pmAskAction(pm, ask.no, 'answer', { answer: text.trim() })); };
+  const answer = (text: string) => {
+    if (sentRef.current || !text.trim()) return;
+    sentRef.current = pmAskAction(pm, ask.no, 'answer', { answer: text.trim() });
+    setSent(sentRef.current);
+  };
   const dismiss = () => {
     if (pmAskAction(pm, ask.no, 'dismiss')) toast('info', words.dismissed(tag), { label: t.pm.ask.undo, run: () => pmAskAction(pm, ask.no, 'undoDismiss') });
   };
