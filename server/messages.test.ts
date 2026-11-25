@@ -73,6 +73,22 @@ describe('parseClientMessage', () => {
     assert.equal(parseClientMessage({ t: 'pmItemArchive', pm: 'p1' }), null);
   });
 
+  it('reads what the user does with a page: an answer needs its answers, the page an id that names a file', () => {
+    assert.deepEqual(parseClientMessage({ t: 'pmPage', pm: 'p1', page: 'a1', action: 'answer', answers: { phone: ['iPhone'] } }), { t: 'pmPage', pm: 'p1', page: 'a1', action: 'answer', answers: { phone: ['iPhone'] } });
+    assert.deepEqual(parseClientMessage({ t: 'pmPage', pm: 'p1', page: 'a1', action: 'seen', answers: {} }), { t: 'pmPage', pm: 'p1', page: 'a1', action: 'seen' });
+    for (const bad of [{ page: 'a1', action: 'answer' }, { page: '../a1', action: 'seen' }, { page: 'a1', action: 'retire' }, { action: 'seen' }]) {
+      assert.equal(parseClientMessage({ t: 'pmPage', pm: 'p1', ...bad }), null, JSON.stringify(bad));
+    }
+  });
+
+  it('refuses a page answer longer than 64 KB, or too deep to be written as JSON', () => {
+    const send = (answers: unknown) => parseClientMessage({ t: 'pmPage', pm: 'p1', page: 'a1', action: 'answer', answers });
+    assert.equal(send({ notes: 'x'.repeat(64 * 1024) }), null);
+    let deep: unknown = 1;
+    for (let i = 0; i < 200_000; i++) deep = [deep];
+    assert.equal(send(deep), null);
+  });
+
   it('reads a request to stop a background task of a session', () => {
     assert.deepEqual(parseClientMessage({ t: 'stopTask', sessionId: 's1', taskId: 'bgj07aynt' }), { t: 'stopTask', sessionId: 's1', taskId: 'bgj07aynt' });
     assert.equal(parseClientMessage({ t: 'stopTask', sessionId: 's1' }), null);

@@ -3,7 +3,9 @@
 // everything is checked before anything is changed. What is written reads back as is through parsePmFile (shared/pm.ts),
 // so a text too long is cut to its limit, while what the parser would drop (an empty text, an address too long) is refused.
 // `now` is a time in ms, above 0: the parser reads 0 as no time at all.
-import { askTag, itemTag, openWaits, PM_LIMITS, type PmAsk, type PmFile, type PmItem, type PmLink, type PmMemoryOp, type PmWait, type PmWorker, parseTag, SESSION_ID } from '../shared/pm.ts';
+import {
+  askTag, itemTag, openWaits, PM_LIMITS, type PmAsk, type PmFile, type PmItem, type PmLink, type PmMemoryOp, type PmPage, type PmWait, type PmWorker, PAGE_ID, parseTag, SESSION_ID,
+} from '../shared/pm.ts';
 import type { SessionInfo } from '../shared/protocol.ts';
 import { st } from './i18n/index.ts';
 
@@ -302,4 +304,105 @@ export function dismissedNotice(file: PmFile): string {
   const untold = file.asks.filter((ask) => ask.state === 'dismissed' && !ask.dismissalTold);
   for (const ask of untold) ask.dismissalTold = true;
   return untold.length ? st.pm.dismissed(untold.map((ask) => askTag(ask.no)).join(', ')) : '';
+}
+
+const findPage = (file: PmFile, id: string): PmPage | undefined => file.pages.find((page) => page.id === id);
+
+/**
+ * A new live page, `id` given by the caller (its HTML file is written before): about task `item` and the questions tagged
+ * in `questions` ("Q4", "W1 Q4"), all of which must exist. The page of the same source still open is replaced by it; past
+ * the pages a PM keeps, the oldest go, and `dropped` names them so that their files go too.
+ */
+export function showPage(
+  file: PmFile, page: { id: string; title: string; source: string; item?: number; questions?: string[] }, now: number,
+): { page: PmPage; dropped: string[] } | Err {
+  // made by the server, the name of its file: one the parser would drop, or a second one, is never kept
+  if (!PAGE_ID.test(page.id) || findPage(file, page.id)) return fail(st.pm.noPage(page.id));
+  const title = clean(page.title, PM_LIMITS.title);
+  if (!title) return fail(st.pm.noTitle);
+  const source = clean(page.source, PM_LIMITS.title);
+  if (!source) return fail(st.pm.noSource);
+  if (page.item !== undefined && !findItem(file, page.item)) return fail(st.pm.noItem(itemTag(page.item)));
+  const questions: string[] = [];
+  for (const asked of page.questions ?? []) {
+    const no = parseTag(asked)?.ask;
+    if (no === undefined || !findAsk(file, no)) return fail(no === undefined ? st.pm.badAsk : st.pm.noAsk(askTag(no)));
+    if (!questions.includes(askTag(no))) questions.push(askTag(no));
+  }
+  for (const open of file.pages) if (open.source === source && open.state === 'open') Object.assign(open, { state: 'replaced', replacedBy: page.id, settledAt: now });
+  const created: PmPage = { id: page.id, ...(page.item === undefined ? {} : { item: page.item }), source, title, questions, state: 'open', createdAt: now };
+  file.pages.push(created);
+  // the oldest settled pages go first: a page still open and unanswered goes only when nothing else is left to drop
+  const excess = Math.max(0, file.pages.length - PM_LIMITS.pages);
+  const settled = file.pages.filter((one) => one.state !== 'open').slice(0, excess);
+  const gone = new Set([...settled, ...file.pages.filter((one) => !settled.includes(one)).slice(0, excess - settled.length)]);
+  const dropped = file.pages.filter((one) => gone.has(one)).map((one) => one.id);
+  file.pages = file.pages.filter((one) => !gone.has(one));
+  return { page: created, dropped };
+}
+
+/** The PM takes a page down: it can no longer be opened nor answered. */
+export function retirePage(file: PmFile, id: string, now: number): PmPage | Err {
+  const page = findPage(file, id);
+  if (!page) return fail(st.pm.noPage(id));
+  if (page.state === 'retired') return fail(st.pm.pageRetired(id));
+  page.state = 'retired';
+  page.settledAt ??= now;
+  return page;
+}
+
+/** A page still open, else the reason it is not one. */
+function openPage(file: PmFile, id: string): PmPage | Err {
+  const page = findPage(file, id);
+  if (!page) return fail(st.pm.noPage(id));
+  return page.state === 'open' ? page : fail(st.pm.pageNotOpen(id));
+}
+
+/** How deep a page's answers may nest: more would overflow the stack of every later copy of the PM's file. */
+const PAGE_ANSWER_DEPTH = 8;
+
+/** Whether `value` holds arrays or objects nested more than `max` deep; walked without recursion, stopping at the first excess. */
+function nestedDeeper(value: unknown, max: number): boolean {
+  let level: unknown[] = [value];
+  for (let depth = 0; level.length; depth++) {
+    const inner = level.flatMap((one) => (typeof one === 'object' && one !== null ? Object.values(one) : []));
+    if (inner.length && depth >= max) return true;
+    level = inner;
+  }
+  return false;
+}
+
+/** What the user sent from an open page (JSON, kept as it reads back); a page takes one answer only. */
+export function answerPage(file: PmFile, id: string, answers: unknown, now: number): PmPage | Err {
+  const page = openPage(file, id);
+  if ('error' in page) return page;
+  if (nestedDeeper(answers, PAGE_ANSWER_DEPTH)) return fail(st.pm.pageAnswersTooDeep(PAGE_ANSWER_DEPTH));
+  const json = JSON.stringify(answers ?? null);
+  if (Buffer.byteLength(json) > PM_LIMITS.pageAnswerBytes) return fail(st.pm.pageAnswersTooBig(PM_LIMITS.pageAnswerBytes / 1024));
+  Object.assign(page, { state: 'answered', answers: JSON.parse(json), settledAt: now });
+  return page;
+}
+
+/** The user saw an open page that asks no question, and has nothing to answer. */
+export function seePage(file: PmFile, id: string, now: number): PmPage | Err {
+  const page = openPage(file, id);
+  if ('error' in page) return page;
+  if (page.questions.length) return fail(st.pm.pageAsks(id, page.questions.join(' ')));
+  Object.assign(page, { state: 'seen', settledAt: now });
+  return page;
+}
+
+/**
+ * A page answered or seen open again, for the user to answer anew; its last answers stay until then. Not once a newer
+ * page of its source followed it: that one is what the PM shows now.
+ */
+export function reopenPage(file: PmFile, id: string): PmPage | Err {
+  const page = findPage(file, id);
+  if (!page) return fail(st.pm.noPage(id));
+  if (page.state !== 'answered' && page.state !== 'seen') return fail(st.pm.pageNotSettled(id));
+  const newer = file.pages.slice(file.pages.indexOf(page) + 1).find((one) => one.source === page.source);
+  if (newer) return fail(st.pm.pageFollowed(id, newer.id));
+  page.state = 'open';
+  delete page.settledAt;
+  return page;
 }

@@ -49,7 +49,10 @@ describe('reading a PM file', () => {
         worker('w-2'),
       ],
       reports: [{ key: 'w-1:4', worker: 'w-1', kind: 'finished', at: 8 }],
-      pages: [{ id: 'p1', anything: [1, 2] }],
+      pages: [
+        { id: 'a1', item: 1, source: 'login-design', title: 'Pick a layout', questions: ['Q2'], state: 'replaced', answers: { layout: 'B', notes: ['x'] }, replacedBy: 'b2', createdAt: 5, settledAt: 6 },
+        { id: 'b2', source: 'login-design', title: 'Pick a layout', questions: [], state: 'open', createdAt: 6 },
+      ],
     };
     assert.deepEqual(parsePmFile(JSON.parse(JSON.stringify(file))), file);
   });
@@ -77,6 +80,19 @@ describe('reading a PM file', () => {
     const file = parsePmFile({ items: [{ no: 1, title: 'A' }, { no: 1, title: 'B' }], workers: [{ session: 'w', item: 1 }, { session: 'w', item: 2 }] });
     assert.deepEqual(file.items.map((one) => one.title), ['A']);
     assert.deepEqual(file.workers.map((one) => one.item), [1]);
+  });
+
+  it('drops a page whose id could not name its file, and keeps the newest pages a PM may have, each once', () => {
+    const file = parsePmFile({
+      pages: [
+        { id: '../x', title: 'Escapes' }, { id: 'p0', title: 'First' }, { id: 'p0', title: 'Again' }, { id: 'p1', state: 'bogus', questions: ['Q3', 'W1', 4] },
+        ...Array.from({ length: PM_LIMITS.pages }, (_, index) => ({ id: `n${index}` })),
+      ],
+    });
+    assert.equal(file.pages.length, PM_LIMITS.pages);
+    assert.equal(file.pages[0].id, 'n0', 'the oldest ones go');
+    const kept = parsePmFile({ pages: [{ id: '../x' }, { id: 'p0', title: 'First' }, { id: 'p0', title: 'Again' }, { id: 'p1', state: 'bogus', questions: ['Q3', 'W1', 4] }] });
+    assert.deepEqual(kept.pages.map((page) => [page.id, page.title, page.state, page.questions]), [['p0', 'First', 'open', []], ['p1', '', 'open', ['Q3']]]);
   });
 
   it('reads a wait stored with its tag as a wait on that number', () => {
@@ -254,5 +270,14 @@ describe('the tag of a message to a PM', () => {
   it('reads back a change of the user, which Open Space writes', () => {
     assert.deepEqual(parsePmTag(JSON.parse(JSON.stringify({ change: true }))), { change: true });
     assert.equal(fromOpenSpace({ change: true }), true);
+  });
+
+  it('reads back the answers of a page and a page seen, which Open Space writes, and drops a page id that names no file', () => {
+    for (const tag of [{ pageAnswer: { page: 'a1' } }, { pageSeen: { page: 'a1' } }] as const) {
+      assert.deepEqual(parsePmTag(JSON.parse(JSON.stringify(tag))), tag);
+      assert.equal(fromOpenSpace(tag), true);
+    }
+    assert.equal(parsePmTag({ pageAnswer: { page: '../x' } }), undefined);
+    assert.equal(fromOpenSpace({ answer: { ask: 1 } }), false, 'an answer to a question stays the user\'s own words');
   });
 });

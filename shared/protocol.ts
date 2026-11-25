@@ -17,10 +17,10 @@ import type { Look } from './look.ts';
 import type { ModInfo, ModSettings } from './mods.ts';
 import type { MusicAction, MusicApp, MusicTrack, NowPlaying } from './music.ts';
 import type { TerminalChoice, TerminalKind } from './terminal.ts';
-import type { PmAskAction, PmDetail, PmMemoryOp, PmMessageTag, PmSettings, PmSummary } from './pm.ts';
+import type { PmAskAction, PmDetail, PmMemoryOp, PmMessageTag, PmPageAction, PmSettings, PmSummary } from './pm.ts';
 import type { CostReport } from './usage.ts';
 
-export type { PmAskAction, PmDetail, PmMemoryOp, PmMessageTag, PmSettings, PmSummary } from './pm.ts';
+export type { PmAskAction, PmDetail, PmMemoryOp, PmMessageTag, PmPage, PmPageAction, PmSettings, PmSummary } from './pm.ts';
 
 /**
  * The longest text a message may carry (the server drops a longer one; the page refuses it first and keeps it in the
@@ -760,6 +760,11 @@ export type ClientMessage =
   | { t: 'pmAsk'; pm: string; ask: number; action: PmAskAction; answer?: string; until?: number }
   /** archives a finished or dropped task of a PM; `item` 0: all of them */
   | { t: 'pmItemArchive'; pm: string; item: number }
+  /**
+   * what the user does with a PM's live page (PmDetail.pages, served at /pm-pages/<pm>/<page>): sends `answers` (what its
+   * kit gathered, JSON), says they saw it, or opens a page answered or seen again; the first answer wins, the PM hears it once
+   */
+  | { t: 'pmPage'; pm: string; page: string; action: PmPageAction; answers?: unknown }
   /** runs `claude update`; the answer comes as claudeUpdate */
   | { t: 'updateClaude' }
   /** runs `claude auth login` (it opens the browser) or `claude auth logout`; the answer comes as claudeAccount */

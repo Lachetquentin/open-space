@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 import type { ModInfo } from '../shared/mods.ts';
-import { PM_TOOL_NAMES, PM_TOOL_USAGE } from '../shared/pm.ts';
+import { PAGE_ID, PM_LIMITS, PM_TOOL_NAMES, PM_TOOL_USAGE } from '../shared/pm.ts';
 import type { Preferences, SessionInfo } from '../shared/protocol.ts';
 import { parseTriggerInput, type Trigger } from '../shared/triggers.ts';
 import { ExternalKey, handleMcp, MCP_SETTINGS, openSpaceMcpConfig, sessionMcpKey, TOOLS, toolsFor, type Caller, type OpenSpaceApi } from './mcp.ts';
@@ -557,12 +557,14 @@ describe('the pm_* tools of the open-space MCP server', () => {
     const { session: worker } = await json(api, 'pm_worker_start', { brief: 'Fix it.' });
     const { session: spare } = await json(api, 'pm_worker_start', { brief: 'Wait.' });
     await json(api, 'pm_ask', { title: 'Asked before', detail: 'Context' });
+    const { page } = await json(api, 'pm_page_show', { html: '<p>Shown before</p>', title: 'Before', source: 'before' });
     const args: Record<(typeof PM_TOOL_NAMES)[number], Record<string, unknown>> = {
       pm_status: {}, pm_set_mission: { mission: 'Ship' }, pm_set_instructions: { instructions: 'Small PRs' }, pm_remember: { text: 'iPhone only' }, pm_forget: { number: 1 },
       pm_item_add: { title: 'Login', worker }, pm_item_update: { item: 'W1', now: 'Testing', step: 'Write the test' }, pm_item_list: {},
       pm_ask: { title: 'Which?', detail: 'Context' }, pm_ask_done: { tag: 'Q1' }, pm_ask_withdraw: { tag: 'Q2' }, pm_link_add: { item: 'W1', url: 'https://example.com/pull/1' },
       pm_worker_start: { brief: 'Go.' }, pm_worker_link: { session: 's2' }, pm_worker_unlink: { session: 's2' }, pm_worker_resolve: { session: spare },
       pm_worker_send: { session: worker, text: 'yes' }, pm_worker_read: { session: worker }, pm_worker_stop: { session: worker },
+      pm_page_show: { html: '<input name="phone">', title: 'Phone', source: 'phone', questions: ['Q1'] }, pm_page_retire: { page },
     };
     // each one carried out, so that none stops short of what it does
     for (const name of PM_TOOL_NAMES) assert.equal((await tool(api, name, args[name], PM)).isError, false, name);
@@ -582,6 +584,34 @@ describe('the pm_* tools of the open-space MCP server', () => {
     }
     assert.deepEqual(readdirSync(dir), [], 'nothing written');
     assert.deepEqual(done, []);
+  });
+
+  it('gives back the page shown as `{ page }` JSON in a block of its own, the questions set aside after it (what the feed reads)', async () => {
+    const { api, book } = pmFake();
+    await json(api, 'pm_ask', { title: 'Which phone?', detail: 'iPhone, Android or both' });
+    await book.change('s1', (file) => { file.asks[0].state = 'dismissed'; });
+    const content = (await blocks(api, 'pm_page_show', { html: '<p>Hi</p>', title: 'Hi', source: 'hi' })).content as { text: string }[];
+    const shown = JSON.parse(content[0].text);
+    assert.deepEqual(Object.keys(shown), ['page']);
+    assert.match(shown.page, PAGE_ID);
+    assert.deepEqual((await book.read('s1')).pages.map((one) => one.id), [shown.page]);
+    assert.equal(content.length, 2, 'the questions set aside come after it');
+  });
+
+  it('keeps a page\'s HTML only while the page is in the plan', async () => {
+    const { api, book, dir } = pmFake();
+    const stored = () => { try { return readdirSync(path.join(dir, 'pages', 's1')).sort(); } catch { return []; } };
+    const { page: first } = await json(api, 'pm_page_show', { html: '<p>First</p>', title: 'First', source: 'first' });
+    assert.equal(await book.pages.read('s1', first), '<p>First</p>');
+    assert.equal((await tool(api, 'pm_page_show', { html: '<p>Lost</p>', title: 'Lost', source: 'lost', questions: ['Q9'] }, PM)).isError, true);
+    assert.equal((await tool(api, 'pm_page_show', { html: 'x'.repeat(PM_LIMITS.pageBytes + 1), title: 'Heavy', source: 'heavy' }, PM)).isError, true);
+    assert.deepEqual(stored(), [`${first}.html`], 'a page refused leaves no file');
+    for (let no = 1; no <= PM_LIMITS.pages; no++) await json(api, 'pm_page_show', { html: `<p>${no}</p>`, title: `Page ${no}`, source: `s${no}` });
+    assert.equal(await book.pages.read('s1', first), null, 'the oldest page goes with its file');
+    const { pages } = await book.read('s1');
+    assert.deepEqual(stored(), pages.map((one) => `${one.id}.html`).sort());
+    assert.equal((await tool(api, 'pm_page_retire', { page: pages[0].id }, PM)).isError, false);
+    assert.equal(await book.pages.read('s1', pages[0].id), null, 'a page retired goes with its file');
   });
 
   it('keeps the mission and the instructions given under their own names', async () => {

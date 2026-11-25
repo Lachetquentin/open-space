@@ -1,7 +1,7 @@
 // Runtime validation of what a WebSocket client sends. Nothing from the network is trusted: unknown or
 // malformed messages are dropped (null), strings are bounded.
 import { MESSENGER_ID, parseMessengerInput } from '../shared/messengers.ts';
-import { PM_ASK_ACTIONS, PM_LIMITS, type PmMemoryOp } from '../shared/pm.ts';
+import { PAGE_ID, PM_ASK_ACTIONS, PM_LIMITS, PM_PAGE_ACTIONS, type PmMemoryOp } from '../shared/pm.ts';
 import { RUN_ID } from '../shared/automata.ts';
 import { MAX_HOOK_BODY, parseTriggerInput, TRIGGER_ID } from '../shared/triggers.ts';
 import { ACCOUNTS_BROWSERS, BRANCH_ACTIONS, EFFORTS, isPermissionMode, MAX_SESSION_FILE, MAX_TEXT, type BranchAction, type CleanedBranch, type ClientMessage, type Effort, type FileAction, type ImageUpload, type InspectView, type McpAction, type PermissionDecision, type SessionOptions } from '../shared/protocol.ts';
@@ -199,6 +199,11 @@ function parseMemoryOp(raw: unknown): PmMemoryOp | null {
   return null;
 }
 
+/** Whether a page's answers, once written as JSON, are within PM_LIMITS.pageAnswerBytes (too deep to write: no). */
+function answersFit(answers: unknown): boolean {
+  try { return Buffer.byteLength(JSON.stringify(answers)) <= PM_LIMITS.pageAnswerBytes; } catch { return false; }
+}
+
 /** The PM messages of the page; their guard (setting on, the session a PM) is the server's (server/pm-desk.ts). */
 function parsePmMessage(raw: Record<string, unknown>): ClientMessage | null {
   if (raw.t === 'pmWatch') {
@@ -234,6 +239,14 @@ function parsePmMessage(raw: Record<string, unknown>): ClientMessage | null {
     case 'pmItemArchive': {
       const item = wholeNumber(raw.item, 0);
       return item === null ? null : { t: 'pmItemArchive', pm, item };
+    }
+    case 'pmPage': {
+      const page = typeof raw.page === 'string' && PAGE_ID.test(raw.page) ? raw.page : null;
+      const action = PM_PAGE_ACTIONS.find((one) => one === raw.action);
+      if (!page || !action) return null;
+      // the answers are JSON already (the message was): their depth is checked by pm-ops.ts answerPage
+      if (action === 'answer') return raw.answers === undefined || !answersFit(raw.answers) ? null : { t: 'pmPage', pm, page, action, answers: raw.answers };
+      return { t: 'pmPage', pm, page, action };
     }
     default: return null;
   }
@@ -361,7 +374,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     }
     case 'pmConvert': return sessionId ? { t: 'pmConvert', sessionId } : null;
     case 'pmRevert': return sessionId ? { t: 'pmRevert', sessionId } : null;
-    case 'pmWatch': case 'pmEdit': case 'pmAsk': case 'pmItemArchive': return parsePmMessage(raw);
+    case 'pmWatch': case 'pmEdit': case 'pmAsk': case 'pmItemArchive': case 'pmPage': return parsePmMessage(raw);
     case 'restartOutdated': return { t: 'restartOutdated' };
     case 'restartApp': return { t: 'restartApp' };
     case 'checkApp': return { t: 'checkApp' };

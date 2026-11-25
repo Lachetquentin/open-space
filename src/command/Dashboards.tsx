@@ -12,13 +12,12 @@ import { DASHBOARDS_BAR } from './Header.tsx';
 import { CloseIcon, GripIcon, MOD_ICONS, ModsIcon, PencilIcon, PlusIcon, RefreshIcon, RemoveIcon, SettingsIcon } from './Icons.tsx';
 import { ActionMenu } from './ModWindows.tsx';
 import { Modal } from './Modal.tsx';
+import { CARRY_AFTER } from './useFreeCarry.ts';
 import { useModPage } from './useModPage.tsx';
 import { INTERACTIVE } from './useWindowDrag.ts';
 
 /** under this width the grid becomes one column, tiles one under the other, not moved by hand */
 const NARROW = 640;
-/** how far a press on a title goes before it carries the tile */
-const CARRY_AFTER = 4;
 /** a tile carried this close to the top or bottom of the dashboards scrolls them, at most this many pixels a frame */
 const SCROLL_EDGE = 64;
 const SCROLL_SPEED = 18;

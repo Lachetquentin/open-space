@@ -41,3 +41,8 @@ export function unwatchPm(pm: string): boolean {
 
 /** The PMs this page watches: what pmWatch sends, again after each reconnection. */
 export const watchedPms = (): string[] => [...views.keys()];
+
+/** The live page open in its window over the office (PmPageWindow), one at a time: its PM and the page asked for. */
+export const usePmPageWindow = create<{ open: { pm: string; page: string } | null }>(() => ({ open: null }));
+export const openPmPage = (pm: string, page: string) => usePmPageWindow.setState({ open: { pm, page } });
+export const closePmPage = () => usePmPageWindow.setState({ open: null });

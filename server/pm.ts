@@ -7,12 +7,15 @@ import path from 'node:path';
 import { emptyPm, type PmFile, parsePmFile, SESSION_ID } from '../shared/pm.ts';
 import { writeFileAtomic } from './atomic-write.ts';
 import { st } from './i18n/index.ts';
+import { PmPages } from './pm-pages.ts';
 
 /** An edit of a PM file: synchronous, since what it changes after an await would be compared too early and never written. */
 type Edit<T> = (file: PmFile) => T extends PromiseLike<unknown> ? never : T;
 
 export class PmBook {
   private readonly dir: string;
+  /** The HTML of each PM's live pages, under pages/<PM>/ (made on the first page): they go with the PM's file. */
+  readonly pages: PmPages;
   /** The last change queued for each PM, never rejected: the next one waits for it. */
   private readonly queues = new Map<string, Promise<unknown>>();
   /** Each PM's file as last read or written, for what cannot wait (a session's summary): a copy no caller changes. */
@@ -22,6 +25,7 @@ export class PmBook {
   constructor(dir: string) {
     this.dir = dir;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    this.pages = new PmPages(path.join(dir, 'pages'));
   }
 
   /** The PM's file: empty when there is none, its readable part when it is damaged. */
@@ -62,12 +66,13 @@ export class PmBook {
     });
   }
 
-  /** Deletes the PM's file, once the changes before are done. */
+  /** Deletes the PM's file and its pages, once the changes before are done. */
   remove(pm: string): Promise<void> {
     // the copy kept of a damaged file goes with it
     return this.queue(pm, async (file) => {
       await rm(file, { force: true });
       await rm(`${file}.bad`, { force: true });
+      await this.pages.removeAll(pm);
       this.files.delete(pm);
       this.tell(pm);
     });

@@ -3,12 +3,12 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, wr
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
-import { emptyPm, itemStatus, openWaits, type PmFile, parsePmFile } from '../shared/pm.ts';
+import { emptyPm, itemStatus, openWaits, PM_LIMITS, type PmFile, parsePmFile } from '../shared/pm.ts';
 import { writeFileAtomic } from './atomic-write.ts';
 import { PmBook } from './pm.ts';
 import {
-  addAsk, addItem, addLink, answerAsk, archiveItem, dismissAsk, dismissedNotice, editMemory, forget, linkWorker, ownWorker, remember, resolveWorker,
-  setInstructions, setMission, settleAsk, snoozeAsk, undoDismiss, unlinkWorker, updateItem, wakeAsk,
+  addAsk, addItem, addLink, answerAsk, answerPage, archiveItem, dismissAsk, dismissedNotice, editMemory, forget, linkWorker, ownWorker, remember, reopenPage,
+  resolveWorker, retirePage, seePage, setInstructions, setMission, settleAsk, showPage, snoozeAsk, undoDismiss, unlinkWorker, updateItem, wakeAsk,
 } from './pm-ops.ts';
 
 const base = mkdtempSync(path.join(os.tmpdir(), 'office-pm-'));
@@ -260,6 +260,110 @@ describe('PM workers', () => {
   });
 });
 
+describe('PM pages', () => {
+  const page = (id: string, source = id) => ({ id, title: `Page ${id}`, source });
+
+  it('replaces the page of the same source still open, and leaves one already answered as it is', () => {
+    const file = emptyPm();
+    showPage(file, page('a1', 'layout'), 1);
+    answerPage(file, 'a1', { layout: 'B' }, 2);
+    showPage(file, page('b2', 'layout'), 3);
+    showPage(file, page('c3', 'layout'), 4);
+    showPage(file, page('d4', 'other'), 5);
+    assert.deepEqual(file.pages.map((one) => [one.id, one.state, one.replacedBy]), [
+      ['a1', 'answered', undefined], ['b2', 'replaced', 'c3'], ['c3', 'open', undefined], ['d4', 'open', undefined],
+    ]);
+  });
+
+  it('keeps the newest pages a PM may have, and names the ones let go so that their files go too', () => {
+    const file = emptyPm();
+    for (let no = 0; no < PM_LIMITS.pages; no++) showPage(file, page(`p${no}`), 1);
+    assert.deepEqual(showPage(file, page('last'), 2), { page: file.pages.at(-1), dropped: ['p0'] });
+    assert.equal(file.pages.length, PM_LIMITS.pages);
+  });
+
+  it('lets go of an answered page before an open one past the limit', () => {
+    const file = emptyPm();
+    for (let no = 0; no < PM_LIMITS.pages; no++) showPage(file, page(`p${no}`), 1);
+    answerPage(file, 'p1', { a: 'B' }, 2);
+    assert.deepEqual(showPage(file, page('last'), 3), { page: file.pages.at(-1), dropped: ['p1'] });
+    assert.equal(file.pages[0]?.id, 'p0');
+    assert.equal(file.pages.length, PM_LIMITS.pages);
+  });
+
+  it('refuses a page about a task or a question that does not exist, changing nothing', () => {
+    const file = withItems(1);
+    addAsk(file, { item: 1, title: 'Which phone?', detail: '' }, 1);
+    showPage(file, page('a1', 'layout'), 1);
+    const before = JSON.stringify(file);
+    assert.ok(isError(showPage(file, { ...page('b2', 'layout'), item: 2 }, 2)));
+    assert.ok(isError(showPage(file, { ...page('b2', 'layout'), questions: ['Q1', 'Q9'] }, 2)));
+    assert.equal(JSON.stringify(file), before);
+    assert.deepEqual((showPage(file, { ...page('b2', 'layout'), item: 1, questions: ['W1 Q1', 'Q1'] }, 2) as { page: { questions: string[] } }).page.questions, ['Q1']);
+  });
+
+  it('takes one answer only, until the user opens the page again', () => {
+    const file = emptyPm();
+    showPage(file, page('a1'), 1);
+    assert.ok(!isError(answerPage(file, 'a1', { phone: 'iPhone' }, 2)));
+    assert.ok(isError(answerPage(file, 'a1', { phone: 'Android' }, 3)));
+    assert.ok(isError(seePage(file, 'a1', 3)));
+    assert.deepEqual(file.pages[0].answers, { phone: 'iPhone' });
+    reopenPage(file, 'a1');
+    assert.ok(!isError(answerPage(file, 'a1', { phone: 'Android' }, 4)));
+    assert.deepEqual([file.pages[0].state, file.pages[0].answers], ['answered', { phone: 'Android' }]);
+  });
+
+  it('refuses answers longer than a page may send, changing nothing', () => {
+    const file = emptyPm();
+    showPage(file, page('a1'), 1);
+    assert.ok(isError(answerPage(file, 'a1', { notes: 'x'.repeat(PM_LIMITS.pageAnswerBytes) }, 2)));
+    assert.equal(file.pages[0].state, 'open');
+    assert.ok(!isError(answerPage(file, 'a1', { notes: 'x'.repeat(PM_LIMITS.pageAnswerBytes - 20) }, 2)));
+  });
+
+  it('refuses answers nested deep enough to overflow the stack of a later copy of the file', () => {
+    const file = emptyPm();
+    showPage(file, page('a1'), 1);
+    let deep: unknown = 'x';
+    for (let i = 0; i < 3000; i++) deep = [deep];
+    assert.ok(isError(answerPage(file, 'a1', { deep }, 2)));
+    assert.equal(file.pages[0].state, 'open');
+    assert.doesNotThrow(() => structuredClone(file));
+    assert.ok(!isError(answerPage(file, 'a1', { choices: [[['a']]] }, 3)));
+  });
+
+  it('answers or opens again only a page the user can still act on', () => {
+    const file = emptyPm();
+    showPage(file, page('a1', 'layout'), 1);
+    showPage(file, page('b2', 'layout'), 2);
+    retirePage(file, 'b2', 3);
+    assert.ok(isError(answerPage(file, 'a1', {}, 4)), 'replaced');
+    assert.ok(isError(answerPage(file, 'b2', {}, 4)), 'retired');
+    assert.ok(isError(reopenPage(file, 'b2')), 'retired');
+    assert.ok(isError(reopenPage(file, 'a1')), 'replaced');
+    assert.ok(isError(retirePage(file, 'b2', 5)), 'already retired');
+    assert.ok(isError(answerPage(file, 'zz', {}, 4)), 'unknown');
+  });
+
+  it('opens again only a page no newer page of its source has followed, so that one page of a source at most is open', () => {
+    const file = emptyPm();
+    showPage(file, page('a1', 'layout'), 1);
+    answerPage(file, 'a1', { layout: 'A' }, 2);
+    showPage(file, page('b2', 'layout'), 3);
+    assert.ok(isError(reopenPage(file, 'a1')));
+    assert.equal(file.pages[0].state, 'answered');
+  });
+
+  it('is seen without an answer only when it asks no question', () => {
+    const file = emptyPm();
+    addAsk(file, { title: 'Which phone?', detail: '' }, 1);
+    showPage(file, { ...page('a1'), questions: ['Q1'] }, 1);
+    assert.ok(isError(seePage(file, 'a1', 2)));
+    assert.equal(file.pages[0].state, 'open');
+  });
+});
+
 describe('a PM file after every operation', () => {
   it('reads back exactly as the operations left it', () => {
     const file = withItems(2);
@@ -289,6 +393,14 @@ describe('a PM file after every operation', () => {
     undoDismiss(file, 4);
     archiveItem(file, 0);
     editMemory(file, { op: 'edit', index: 0, was: 'Uses pnpm', text: 'Uses npm' }, 8);
+    showPage(file, { id: 'a1', title: 'Layout', source: 'layout', item: 1, questions: ['Q3'] }, 8);
+    showPage(file, { id: 'b2', title: 'Layout', source: 'layout' }, 9);
+    answerPage(file, 'b2', { layout: 'B', screens: ['home'], ok: true }, 9);
+    showPage(file, { id: 'c3', title: 'Seen', source: 'note' }, 9);
+    seePage(file, 'c3', 10);
+    reopenPage(file, 'c3');
+    showPage(file, { id: 'd4', title: 'Gone', source: 'gone' }, 10);
+    retirePage(file, 'd4', 11);
     assert.deepEqual(parsePmFile(JSON.parse(JSON.stringify(file))), file);
   });
 });
@@ -329,7 +441,7 @@ describe('the PM book', () => {
     assert.deepEqual((await book.read('p')).items.map((item) => item.title), ['Kept']);
   });
 
-  it('writes a file only its owner can read, and forgets it', async () => {
+  it('writes a file only its owner can read, and forgets it with its pages', async () => {
     const folder = path.join(base, 'private');
     const book = new PmBook(folder);
     await book.change('p', (file) => setMission(file, 'Ship'));
@@ -337,8 +449,10 @@ describe('the PM book', () => {
     assert.equal(JSON.parse(readFileSync(file, 'utf8')).mission, 'Ship');
     if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600);
     writeFileSync(`${file}.bad`, '{');
+    await book.pages.write('p', 'a1', '<p>Pick one</p>');
     await book.remove('p');
-    assert.deepEqual(readdirSync(folder), []);
+    assert.deepEqual(readdirSync(folder).filter((name) => name !== 'pages'), []);
+    assert.deepEqual(readdirSync(path.join(folder, 'pages')), [], 'its pages go with it');
     assert.deepEqual(await book.read('p'), emptyPm());
   });
 

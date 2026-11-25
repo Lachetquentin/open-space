@@ -413,7 +413,7 @@ async function makeMod(request: string) {
   return { mod, sessionId: session.id };
 }
 
-sessions.onSessionForgotten((session) => { pmBook.remove(session.id).catch((error: unknown) => log(`cannot remove the PM file of ${session.name}`, error)); });
+sessions.onSessionForgotten((session) => { pmBook.remove(session.id).catch((error: unknown) => log(`cannot remove the PM file and pages of ${session.name}`, error)); });
 const findSession = (sessionId: string) => sessions.list().find((session) => session.id === sessionId);
 /** A message of Open Space to a PM (a worker's report, the user's answer, a change of its plan): queued while it works. */
 const deliverToPm = (pm: string, text: string, tag: PmMessageTag) => sessions.send(pm, text, [], [], tag);
@@ -613,6 +613,8 @@ function browserOf(sessionId: string, shared: boolean) {
 
 const { server, hooksServer, modsServer } = createWebServer({ policy, distDir: DIST, soundsDir: soundsFolder(config.dataDir), attachmentsDir: attachmentsFolder(config.dataDir), uploadsDir: uploadsFolder(config.dataDir), dev: DEV, devPort: DEV_PORT, log, onConnection,
   sessionFile: (sessionId, relative) => { try { return fileAt(filesRoot(sessionId), relative); } catch { return null; } },
+  // a PM's live page: while the setting is on, to a session that acts as a PM, a page of its plan not retired
+  pmPage: (pm, page) => desk.pageHtml(pm, page),
   browser: { watch: (sessionId, lane, res) => browsers.watch(browserId(sessionId, lane), res), version: (sessionId, lane) => browsers.version(sessionId, lane), key: (sessionId) => browserKey(secret, sessionId), known: (sessionId) => sessions.list().some((session) => session.id === sessionId),
     socket: (sessionId, lane) => browsers.socket(sessionId, lane), connect: (client, upstream, sessionId, lane) => browsers.connect(client, upstream, browserId(sessionId, lane)),
     shared: { key: sharedKey, version: () => browsers.sharedVersion(), socket: () => browsers.sharedSocket(), connect: (client, upstream, owner) => browsers.relay(client, upstream, owner) } },
@@ -797,7 +799,7 @@ async function handle(message: ClientMessage, send: (message: ServerMessage) => 
     }
     case 'pmRevert': checkPmOn(); sessions.setPm(message.sessionId, false); desk.refresh(message.sessionId); break;
     // each one waits for the setting and for a session that acts as a PM, else it is ignored (server/pm-desk.ts)
-    case 'pmWatch': case 'pmEdit': case 'pmAsk': case 'pmItemArchive': await desk.handle(message, send); break;
+    case 'pmWatch': case 'pmEdit': case 'pmAsk': case 'pmItemArchive': case 'pmPage': await desk.handle(message, send); break;
     case 'browser':
       if (sessions.list().some((session) => session.id === message.sessionId)) await browsers.act(browserId(message.sessionId, message.lane), message.action).catch((error: unknown) => log('browser', error));
       break;

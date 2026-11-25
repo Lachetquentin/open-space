@@ -2,7 +2,7 @@
 // The office and the break room each have their own (see shared/room-layout.ts).
 import type { Festival } from '../../shared/festivals.ts';
 import { blockedTiles, isMetricsPiece, layoutOn, withAutomataAccess, withMetrics, type Layout, type MetricsKind, type PlayerSpot } from '../../shared/room-layout.ts';
-import { DOOR_SIZE, ROOM, boxOutline, facingVector, insideConvex, onLeftWall, tileCenter, type Box, type Point } from './geometry.ts';
+import { DOOR_SIZE, ROOM, boxOutline, depthOf, distance, facingVector, insideConvex, onLeftWall, tileCenter, type Box, type Point } from './geometry.ts';
 import { route } from './paths.ts';
 import { PORTAL, portalFace, portalPoint } from './pixel-furniture.ts';
 
@@ -120,6 +120,31 @@ export class Floor {
     const path = start ? [{ ...start }, ...this.route(start, place)] : this.route(from, place);
     return place.at ? [...path, { ...place.at }] : path;
   }
+  /**
+   * Where someone stands to speak to whoever sits on a seat: the centre of a free tile (no furniture, no chair) at its
+   * side, else behind or before it, else at a corner; none of `taken` (where others stand already). Of two, the one
+   * further back first, so they do not hide the sitter, then the nearest to `from`. Null when every one is taken.
+   */
+  standingBeside(seat: number, from: Point, taken: readonly Point[] = []): Point | null {
+    const place = this.layout.seats[seat];
+    const facing = facingVector(place.facing);
+    const ahead = { x: Math.round(facing.x), y: Math.round(facing.y) };
+    const tile = { x: Math.floor(place.x), y: Math.floor(place.y) };
+    const rings = [
+      [{ x: -ahead.y, y: ahead.x }, { x: ahead.y, y: -ahead.x }],
+      [{ x: -ahead.x, y: -ahead.y }, ahead],
+      [{ x: 1, y: 1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: -1, y: -1 }],
+    ];
+    const free = (x: number, y: number) => this.isFreeTile(x, y) && !this.avoided.has(`${x},${y}`)
+      && !taken.some((point) => Math.floor(point.x) === x && Math.floor(point.y) === y);
+    for (const ring of rings) {
+      const spots = ring.map((step) => tileCenter({ x: tile.x + step.x, y: tile.y + step.y })).filter((spot) => free(Math.floor(spot.x), Math.floor(spot.y)));
+      spots.sort((a, b) => depthOf(a) - depthOf(b) || distance(a, from) - distance(b, from));
+      if (spots[0]) return spots[0];
+    }
+    return null;
+  }
+
   /** From anywhere (usually a seat) out through the door. */
   pathToDoor(from: Point): Point[] { return this.throughPortal ? this.pathIntoPortal(from) : [...this.route(from, this.layout.door), this.door]; }
 

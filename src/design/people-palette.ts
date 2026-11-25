@@ -80,6 +80,9 @@ export const PEOPLE_INK = {
   lens: '#bcd6ea',
 };
 
+/** The clipboard a project manager holds in the room (chibi.ts): a wooden board, its steel clip, a sheet with lines. */
+export const CLIPBOARD = { board: '#c99a5e', boardDark: '#86603a', clip: '#b4bccb', clipDark: '#6b7383', paper: '#f1f2f5', line: '#6b7383' } as const;
+
 /** The see-through dummy the crew editor shows each piece of the wardrobe on: a dotted line, a faint body. */
 export const MANNEQUIN = { line: 'rgb(200 210 255 / 0.75)', body: 'rgb(200 210 255 / 0.13)' };
 

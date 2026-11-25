@@ -36,6 +36,15 @@ export interface Person {
   automatonAgent?: string;
   /** a robot of this role (src/room/robot.ts), with the automatons' tag and cord: an external run (its role, or its sub-agent's) or a session a trigger started (its role, or its trigger's name) */
   automatonRole?: string;
+  /**
+   * a project manager while the PM setting is on (its pmSummary is sent): a clipboard in hand. 'open' while it is not
+   * closed nor put to rest: its workers come to its desk to report
+   */
+  pm?: 'open' | 'closed';
+  /** a worker: the id of its PM's session */
+  pmOf?: string;
+  /** the turns the session finished: one more, and a worker walks over to report to its PM (scene.ts) */
+  turns?: number;
 }
 
 export interface RoomPlan {
@@ -133,6 +142,9 @@ export function planRoom(
     agents: session.subagents.map(({ id, name, type }) => ({ id, name, type: type || t.room.subagent })),
     tags: session.tags ?? [],
     branch: !!session.worktree,
+    turns: session.turns,
+    ...(session.pmSummary ? { pm: STOPPED.has(session.state) || session.resting ? 'closed' as const : 'open' as const } : {}),
+    ...(session.pmOf ? { pmOf: session.pmOf } : {}),
     // a trigger's run is a robot of its role, else of its trigger (src/room/robot.ts)
     ...(session.trigger ? { automatonRole: session.trigger.role || session.trigger.name } : {}),
   }));

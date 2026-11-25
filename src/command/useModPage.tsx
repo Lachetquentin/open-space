@@ -27,8 +27,11 @@ function dataFor(name: ModData, s: CommandPostState) {
 }
 const pick = (name: ModData) => (s: CommandPostState) => (name === 'sessions' ? s.sessions : name === 'quota' ? s.quota : s.costs);
 
-/** The design tokens of Open Space's page as they are now: the user's window style, for the mod to dress in. */
-function currentTheme() {
+/**
+ * The design tokens of Open Space's page as they are now: the user's window style, for a mod or a PM's live page to dress
+ * in (the `theme` message both kits take).
+ */
+export function currentTheme() {
   const style = getComputedStyle(document.documentElement);
   const s = useSessions.getState();
   return {
@@ -37,6 +40,14 @@ function currentTheme() {
     language: s.preferences.language ?? 'fr',
     reducedMotion: s.preferences.reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches,
   };
+}
+
+/** Calls `tell` whenever the look changes (the window style, the theme, the glass, the language); returns what stops it. */
+export function onThemeChange(tell: () => void): () => void {
+  return useSessions.subscribe((s, before) => {
+    const now = s.preferences, then = before.preferences;
+    if (now.windowStyle !== then.windowStyle || now.theme !== then.theme || now.language !== then.language || now.reduceMotion !== then.reduceMotion) requestAnimationFrame(tell);
+  });
 }
 
 /**
@@ -181,11 +192,7 @@ export function useModPage(mod: ModInfo, paced: boolean) {
     };
     window.addEventListener('message', onMessage);
     const stopStore = onModStore(mod.id, (name, value) => post({ openSpace: 'store', name, value }));
-    // the look changes with the window style, the theme, the glass and the language
-    const restyle = useSessions.subscribe((s, before) => {
-      const now = s.preferences, then = before.preferences;
-      if (now.windowStyle !== then.windowStyle || now.theme !== then.theme || now.language !== then.language || now.reduceMotion !== then.reduceMotion) requestAnimationFrame(tellTheme);
-    });
+    const restyle = onThemeChange(tellTheme);
     const costsTimer = setInterval(() => { if (watched.has('costs')) askCosts(); }, COSTS_EVERY_MS);
     return () => {
       window.removeEventListener('message', onMessage);
