@@ -3,7 +3,8 @@
 // waited), then the read sessions that left something to do (src/state/pending.ts), then the finished ones (read,
 // nothing left or put off for later), and last, apart, the runs a trigger started, finished to read or at work
 // (one asking the user something stays with the others, marked as one). A click opens the session; the title folds
-// the panel down to its counts, a group's title folds that group away (both remembered in this browser).
+// the panel down to its counts, a group's title folds that group away (both remembered in this browser). When the
+// session in front acts as a project manager (PM), its plan comes last, in a « Projet » section (PmProject.tsx).
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, useMemo, useState } from 'react';
 import { t } from '../i18n/index.ts';
 import { formatAge } from '../lib/format.ts';
@@ -17,10 +18,13 @@ import { useSessions } from '../state/sessions.ts';
 import { useProjects } from '../state/useProjects.ts';
 import { pendingEntries, type PendingEntry } from '../state/pending.ts';
 import { isPutOff, usePendingLater } from '../state/pending-later.ts';
+import { pmSettings } from '../../shared/pm.ts';
+import { PmBadge } from '../design/PmBadge.tsx';
 import { AutomatonIcon, BranchIcon, ChevronDownIcon, ChevronUpIcon, CompactIcon, PauseIcon, PlusIcon } from './Icons.tsx';
 import type { SessionInfo } from '../../shared/protocol.ts';
 import { BranchMark } from './BranchCard.tsx';
 import { Marquee } from './Marquee.tsx';
+import { PmProject } from './PmProject.tsx';
 import { TagChips } from './TagChips.tsx';
 
 const FOLDED_KEY = 'poste:status-folded';
@@ -32,6 +36,8 @@ const OPEN_CARDS_KEY = 'statusOpenCards';
 const CLOSED_ROWS = 2;
 
 type Group = 'waiting' | 'working' | 'finish' | 'ready' | 'automata';
+/** What folds away in the panel: a group, or a PM's « Projet » section. */
+type Section = Group | 'project';
 
 function StatusGroup({ group, count, folded, onFold, children }: { group: Group; count: number; folded: boolean; onFold: () => void; children: ReactNode }) {
   const words = t.session.status;
@@ -47,11 +53,13 @@ function StatusGroup({ group, count, folded, onFold, children }: { group: Group;
   );
 }
 
-/** What a row says first: the label (the name, or what to do for whom), then the session's tag and branch, and `marked`, a mark for a trigger's run. */
+/** What a row says first: the label (the name, or what to do for whom), a PM's badge, then the session's tag and branch, and `marked`, a mark for a trigger's run. */
 function RowName({ session, label, marked = false }: { session: SessionInfo; label: string; marked?: boolean }) {
+  const pmOn = useSessions((s) => pmSettings(s.preferences).enabled);
   return (
     <>
       <span className="cp-status__name">{label}</span>
+      {pmOn && session.pm && <PmBadge label={t.session.list.pmBadge} title={t.session.list.pmBadgeTitle} />}
       <TagChips tags={session.tags} className="cp-status__tag" short />
       {session.worktree && <BranchMark branch={session.worktree.branch} />}
       {marked && session.trigger && <span className="cp-status__automaton" title={t.session.status.automata}><AutomatonIcon /></span>}
@@ -110,6 +118,8 @@ export function StatusPanel() {
   const show = useSessions((s) => s.show);
   const openIds = useSessions((s) => s.openIds);
   const openNewSession = useSessions((s) => s.openNewSession);
+  // the session in front, while it acts as a PM (the server sends its summary only then)
+  const lead = useSessions((s) => (s.selectedId && s.sessions[s.selectedId]?.pmSummary ? s.sessions[s.selectedId] : undefined));
   // pulled by its top right corner: wider, and taller for its list (a double click gives it back its own size)
   const [size, setSize] = useState(() => readPreference<{ width: number; height: number } | null>('statusSize', null));
   const resize = (event: ReactPointerEvent<HTMLElement>) => {
@@ -130,9 +140,9 @@ export function StatusPanel() {
     window.addEventListener('pointerup', stop);
   };
   const [folded, setFolded] = useState(readFolded);
-  const [foldedGroups, setFoldedGroups] = useState(() => readPreference<Group[]>('statusFolded', []));
+  const [foldedGroups, setFoldedGroups] = useState(() => readPreference<Section[]>('statusFolded', []));
   const later = usePendingLater((s) => s.later);
-  const foldGroup = (group: Group) => {
+  const foldGroup = (group: Section) => {
     const next = foldedGroups.includes(group) ? foldedGroups.filter((other) => other !== group) : [...foldedGroups, group];
     writePreference('statusFolded', next);
     setFoldedGroups(next);
@@ -163,7 +173,7 @@ export function StatusPanel() {
   }, [idle, later]);
   // the times go on by the second while someone works, by the minute otherwise
   const now = useNow(15_000);
-  if (!waiting.length && !toFinish.length && !working.length && !ready.length && !automata) return null;
+  if (!waiting.length && !toFinish.length && !working.length && !ready.length && !automata && !lead) return null;
   const words = t.session.status;
   const waitingRow = ({ session, kind }: (typeof waiting)[number], marked: boolean) => (
     <li key={session.id}>
@@ -250,6 +260,7 @@ export function StatusPanel() {
                 {atWork.map(workingRow)}
             </StatusGroup>
           )}
+          {lead && <PmProject key={lead.id} pm={lead} folded={foldedGroups.includes('project')} onFold={() => foldGroup('project')} />}
         </div>
       )}
       {/* once a window is open the launcher steps aside: a new session starts from here (or N) */}
