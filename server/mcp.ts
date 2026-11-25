@@ -32,6 +32,8 @@ import { callPmTool, isPmTool, PM_TOOLS } from './pm-tools.ts';
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 /** The largest request taken: room for a PM's live page (PM_LIMITS.pageBytes) once written as JSON, its quotes and line breaks escaped. */
 export const MAX_MCP_BODY = 4 * 1024 * 1024;
+/** The largest request from an external program or a messenger's agent: they publish no page. */
+export const MAX_MCP_BODY_OTHER = 256 * 1024;
 /** The name of the server in a --mcp-config: its tools are mcp__open-space__<tool>. */
 export const MCP_SERVER = MCP_SERVER_NAME;
 

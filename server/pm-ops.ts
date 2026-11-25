@@ -353,10 +353,25 @@ function openPage(file: PmFile, id: string): PmPage | Err {
   return page.state === 'open' ? page : fail(st.pm.pageNotOpen(id));
 }
 
+/** How deep a page's answers may nest: more would overflow the stack of every later copy of the PM's file. */
+const PAGE_ANSWER_DEPTH = 8;
+
+/** Whether `value` holds arrays or objects nested more than `max` deep; walked without recursion, stopping at the first excess. */
+function nestedDeeper(value: unknown, max: number): boolean {
+  let level: unknown[] = [value];
+  for (let depth = 0; level.length; depth++) {
+    const inner = level.flatMap((one) => (typeof one === 'object' && one !== null ? Object.values(one) : []));
+    if (inner.length && depth >= max) return true;
+    level = inner;
+  }
+  return false;
+}
+
 /** What the user sent from an open page (JSON, kept as it reads back); a page takes one answer only. */
 export function answerPage(file: PmFile, id: string, answers: unknown, now: number): PmPage | Err {
   const page = openPage(file, id);
   if ('error' in page) return page;
+  if (nestedDeeper(answers, PAGE_ANSWER_DEPTH)) return fail(st.pm.pageAnswersTooDeep(PAGE_ANSWER_DEPTH));
   const json = JSON.stringify(answers ?? null);
   if (Buffer.byteLength(json) > PM_LIMITS.pageAnswerBytes) return fail(st.pm.pageAnswersTooBig(PM_LIMITS.pageAnswerBytes / 1024));
   Object.assign(page, { state: 'answered', answers: JSON.parse(json), settledAt: now });

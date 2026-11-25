@@ -200,6 +200,11 @@ function parseMemoryOp(raw: unknown): PmMemoryOp | null {
 }
 
 /** The PM messages of the page; their guard (setting on, the session a PM) is the server's (server/pm-desk.ts). */
+/** Whether a page's answers, once written as JSON, are within PM_LIMITS.pageAnswerBytes (too deep to write: no). */
+function answersFit(answers: unknown): boolean {
+  try { return Buffer.byteLength(JSON.stringify(answers)) <= PM_LIMITS.pageAnswerBytes; } catch { return false; }
+}
+
 function parsePmMessage(raw: Record<string, unknown>): ClientMessage | null {
   if (raw.t === 'pmWatch') {
     if (!Array.isArray(raw.pms)) return null;
@@ -239,8 +244,8 @@ function parsePmMessage(raw: Record<string, unknown>): ClientMessage | null {
       const page = typeof raw.page === 'string' && PAGE_ID.test(raw.page) ? raw.page : null;
       const action = PM_PAGE_ACTIONS.find((one) => one === raw.action);
       if (!page || !action) return null;
-      // the answers are JSON already (the message was): their size is the PM file's limit (pm-ops.ts answerPage)
-      if (action === 'answer') return raw.answers === undefined ? null : { t: 'pmPage', pm, page, action, answers: raw.answers };
+      // the answers are JSON already (the message was): their depth is checked by pm-ops.ts answerPage
+      if (action === 'answer') return raw.answers === undefined || !answersFit(raw.answers) ? null : { t: 'pmPage', pm, page, action, answers: raw.answers };
       return { t: 'pmPage', pm, page, action };
     }
     default: return null;

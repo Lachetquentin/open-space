@@ -16,7 +16,7 @@ import { browserId } from '../shared/browser.ts';
 import { isModId, PHONE_MODS_PORT } from '../shared/mods.ts';
 import { TESTERS } from './browser.ts';
 import { MAX_HOOK_BODY, type TriggerRunOutcome } from '../shared/triggers.ts';
-import { MAX_MCP_BODY, type Caller } from './mcp.ts';
+import { MAX_MCP_BODY, MAX_MCP_BODY_OTHER, type Caller } from './mcp.ts';
 import { PM_PAGE_CSP, pageDocument } from './pm-pages.ts';
 
 /** The file types served: the compiled UI's, and what sessions send or publish. */
@@ -368,7 +368,7 @@ export function createWebServer(options: WebServerOptions) {
     if (!allowed) { res.writeHead(404).end(); req.resume(); return; }
     // no stream from the server, no session to end: a POST per message
     if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }).end(); req.resume(); return; }
-    const body = await readBody(req, res, MAX_MCP_BODY);
+    const body = await readBody(req, res, 'session' in caller! ? MAX_MCP_BODY : MAX_MCP_BODY_OTHER);
     if (body === null) return;
     const reply = await mcp!.handle(caller!, body);
     if (reply.json === null) { res.writeHead(reply.status).end(); return; }

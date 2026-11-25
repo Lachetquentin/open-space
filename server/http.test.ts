@@ -495,6 +495,12 @@ describe('the triggers\' webhooks and the open-space MCP server', () => {
     assert.equal((await rawPost('/mcp/s1/key-of-s1', '{}', {}, `127.0.0.1:${hooksPort}`, hooksPort)).status, 404, 'not the MCP server');
   });
 
+  it('takes a page-sized body from a session, but a small one only from an external program or a messenger', async () => {
+    const big = `{"pad":"${'x'.repeat(300_000)}"}`;
+    assert.equal((await rawPost('/mcp/s1/key-of-s1', big, { 'Content-Type': 'application/json' })).status, 200);
+    assert.equal((await rawPost('/mcp/messenger/bot00001/bot-key', big)).status, 413);
+  });
+
   it('answers a session with its key, the external program once its access is on, and never a page', async () => {
     const ok = await rawPost('/mcp/s1/key-of-s1', '{"jsonrpc":"2.0"}', { 'Content-Type': 'application/json' });
     assert.equal(ok.status, 200);

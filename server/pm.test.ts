@@ -313,6 +313,17 @@ describe('PM pages', () => {
     assert.ok(!isError(answerPage(file, 'a1', { notes: 'x'.repeat(PM_LIMITS.pageAnswerBytes - 20) }, 2)));
   });
 
+  it('refuses answers nested deep enough to overflow the stack of a later copy of the file', () => {
+    const file = emptyPm();
+    showPage(file, page('a1'), 1);
+    let deep: unknown = 'x';
+    for (let i = 0; i < 3000; i++) deep = [deep];
+    assert.ok(isError(answerPage(file, 'a1', { deep }, 2)));
+    assert.equal(file.pages[0].state, 'open');
+    assert.doesNotThrow(() => structuredClone(file));
+    assert.ok(!isError(answerPage(file, 'a1', { choices: [[['a']]] }, 3)));
+  });
+
   it('answers or opens again only a page the user can still act on', () => {
     const file = emptyPm();
     showPage(file, page('a1', 'layout'), 1);

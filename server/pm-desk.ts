@@ -196,7 +196,7 @@ export class PmDesk {
     if ('error' in settled) return settled;
     if (action === 'seen') this.tell(pm, st.pm.pageSeen(settled.title, page), { pageSeen: { page } });
     else {
-      const words = fenced('pm-page-answers', (tag) => st.pm.pageAnswers(settled.title, page, settled.questions.join(' '), tag), JSON.stringify(settled.answers ?? null, null, 2));
+      const words = fenced('pm-page-answers', (tag) => st.pm.pageAnswers(settled.title, page, settled.questions.join(' '), tag), JSON.stringify(settled.answers ?? null));
       this.tell(pm, words, { pageAnswer: { page } });
     }
     return settled;
