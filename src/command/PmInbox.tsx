@@ -16,6 +16,9 @@ import { ActionMenu } from './ModWindows.tsx';
 import { WindowCompactContext } from './useWindowDrag.ts';
 import { usePhone } from '../lib/phone.ts';
 
+/** How long an answer sent waits for the plan to take its question away before the row can answer again. */
+const ANSWER_RETRY_MS = 5000;
+
 export function PmInbox({ session }: { session: SessionInfo }) {
   const detail = usePmDetail(session.pmSummary ? session.id : null);
   // folded from the start in a small window or on a phone, where the thread needs the room
@@ -100,6 +103,13 @@ function AskRow({ pm, ask }: { pm: string; ask: PmAsk }) {
   const [typed, setTyped] = useState('');
   // one answer per question: the buttons and the field wait for the plan to bring the row away
   const [sent, setSent] = useState(false);
+  // a refused answer changes nothing in the plan: the row is still there a while later, and answers again (the server
+  // still takes one answer only)
+  useEffect(() => {
+    if (!sent) return;
+    const timer = setTimeout(() => setSent(false), ANSWER_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [sent]);
   const words = t.pm.inbox;
   const tag = fullAskTag(ask);
   const answer = (text: string) => { if (sent || !text.trim()) return; setSent(pmAskAction(pm, ask.no, 'answer', { answer: text.trim() })); };
