@@ -94,7 +94,9 @@ describe('attention queue', () => {
     // none left open (answered, or snoozed: the server counts it no more), or no summary (the setting off): an ordinary session
     assert.equal(attentionKind(session('pm', 'wait', { ...summary(0), lastSeq: 7 }), { pm: 7 }), null);
     assert.equal(attentionKind(session('pm', 'wait', { lastSeq: 7 }), { pm: 7 }), null);
-    const queue = attentionQueue([session('finished', 'wait', { stateSince: 1 }), pm, session('asking', 'perm', { stateSince: 50 })]);
+    // a PM that failed shows its error, not the question it left open
+    assert.equal(attentionKind(session('pm', 'error', { ...summary(1), lastSeq: 7 }), { pm: 3 }), 'error');
+    const queue = attentionQueue([session('finished', 'wait', { stateSince: 1 }), pm,session('asking', 'perm', { stateSince: 50 })]);
     assert.deepEqual(queue.map((item) => item.session.id), ['asking', 'pm', 'finished']);
     assert.deepEqual(newlyWaiting({ pm: session('pm', 'wait', { lastSeq: 7 }) }, [pm], { pm: 7 }).map((item) => item.kind), ['decision'], 'it rings and counts as new');
   });

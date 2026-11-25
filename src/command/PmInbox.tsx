@@ -100,9 +100,11 @@ function ItemRow({ item, note, kind }: { item: PmItem; note: string; kind: 'bloc
 function AskRow({ pm, ask }: { pm: string; ask: PmAsk }) {
   const toast = useSessions((s) => s.toast);
   const [typed, setTyped] = useState('');
+  // one answer per question: the buttons and the field wait for the plan to bring the row away
+  const [sent, setSent] = useState(false);
   const words = t.pm.inbox;
   const tag = fullAskTag(ask);
-  const answer = (text: string) => { if (text.trim()) pmAskAction(pm, ask.no, 'answer', { answer: text.trim() }); };
+  const answer = (text: string) => { if (sent || !text.trim()) return; setSent(pmAskAction(pm, ask.no, 'answer', { answer: text.trim() })); };
   const dismiss = () => {
     if (pmAskAction(pm, ask.no, 'dismiss')) toast('info', words.dismissed(tag), { label: t.pm.ask.undo, run: () => pmAskAction(pm, ask.no, 'undoDismiss') });
   };
@@ -130,7 +132,7 @@ function AskRow({ pm, ask }: { pm: string; ask: PmAsk }) {
             return (
               <button
                 key={label} type="button" className="cp-button" data-size="small" data-variant={recommended ? 'primary' : undefined}
-                aria-label={recommended ? words.recommendedAnswer(label) : undefined} title={recommended ? t.pm.ask.recommended : undefined} onClick={() => answer(label)}
+                aria-label={recommended ? words.recommendedAnswer(label) : undefined} title={recommended ? t.pm.ask.recommended : undefined} disabled={sent} onClick={() => answer(label)}
               >
                 {recommended && <StarIcon />}{label}
               </button>
@@ -141,11 +143,11 @@ function AskRow({ pm, ask }: { pm: string; ask: PmAsk }) {
         <div className="cp-pm-inbox__answers">
           {/* inside the composer's form: Enter answers the question, it never sends the composer's draft */}
           <input
-            className="cp-pm-inbox__field" value={typed} placeholder={words.typeAnswer} aria-label={words.answerLabel(tag)}
+            className="cp-pm-inbox__field" value={typed} disabled={sent} placeholder={words.typeAnswer} aria-label={words.answerLabel(tag)}
             onChange={(e) => setTyped(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); e.stopPropagation(); answer(typed); } }}
           />
-          <button type="button" className="cp-button" data-size="small" data-variant="primary" disabled={!typed.trim()} onClick={() => answer(typed)}>{t.pm.ask.answer}</button>
+          <button type="button" className="cp-button" data-size="small" data-variant="primary" disabled={sent || !typed.trim()} onClick={() => answer(typed)}>{t.pm.ask.answer}</button>
         </div>
       )}
     </li>

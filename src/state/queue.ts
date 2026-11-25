@@ -20,8 +20,8 @@ const unseen = (session: SessionInfo, seen: SeenSequences) => (session.quietFrom
  */
 export function attentionKind(session: SessionInfo, seen: SeenSequences = {}): AttentionKind | null {
   if (session.state === 'perm') return session.permissions[0]?.questions || session.permissions[0]?.secrets ? 'question' : 'permission';
-  if (session.pmSummary?.asks) return 'decision';
   if (session.state === 'error') return unseen(session, seen) ? 'error' : null;
+  if (session.pmSummary?.asks) return 'decision';
   if (session.state === 'wait' && session.turns > 0 && !isPaused(session) && unseen(session, seen)) return 'finished';
   return null;
 }
