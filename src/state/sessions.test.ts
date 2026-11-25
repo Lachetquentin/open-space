@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { ClientMessage, Preferences, ServerMessage, SessionInfo } from '../../shared/protocol.ts';
+import type { ClientMessage, PmDetail, Preferences, ServerMessage, SessionInfo } from '../../shared/protocol.ts';
 
 const stored = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', {
@@ -30,6 +30,27 @@ describe('the windows a reload brings back', () => {
     assert.deepEqual(useSessions.getState().openIds, ['ines', 'alice']);
     const asked = sent.flatMap((message) => (message.t === 'log' ? [message.sessionId] : []));
     assert.deepEqual(asked.sort(), ['alice', 'ines']);
+  });
+});
+
+describe('the PMs this page watches', () => {
+  it('are watched again once the page is connected again', async () => {
+    const { watchPm, unwatchPm } = await import('./pm.ts');
+    const sent: ClientMessage[] = [];
+    useSessions.setState({ send: (message) => { sent.push(message); return true; } });
+    watchPm('lead');
+    useSessions.getState().receive(hello([session('lead')]));
+    unwatchPm('lead');
+    assert.deepEqual(sent.filter((message) => message.t === 'pmWatch'), [{ t: 'pmWatch', pms: ['lead'] }]);
+  });
+
+  it('keep the plan the server sends, and drop it once it is none', async () => {
+    const { usePmDetails } = await import('./pm.ts');
+    const detail = { pm: 'lead', live: [] } as unknown as PmDetail;
+    useSessions.getState().receive({ t: 'pmDetail', pm: 'lead', detail });
+    assert.equal(usePmDetails.getState().details.lead, detail);
+    useSessions.getState().receive({ t: 'pmDetail', pm: 'lead', detail: null });
+    assert.equal(usePmDetails.getState().details.lead, undefined);
   });
 });
 

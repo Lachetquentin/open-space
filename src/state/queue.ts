@@ -13,17 +13,25 @@ export type SeenSequences = Readonly<Record<string, number>>;
 /** What came after `quietFrom` was Open Space compacting the conversation on its own: nothing new to read. */
 const unseen = (session: SessionInfo, seen: SeenSequences) => (session.quietFrom ?? session.lastSeq) > (seen[session.id] ?? 0);
 
-/** The reason a session needs the user, or null. A question is an AskUserQuestion call waiting for its answers, or keys asked by os-secret. */
+/**
+ * The reason a session needs the user, or null. A question is an AskUserQuestion call waiting for its answers, or keys
+ * asked by os-secret; a decision, a question of a PM's plan still open and not snoozed (pmSummary, sent while the PM
+ * setting is on): it stays until it is settled, seen or not, and goes before the turn the PM finished on asking it.
+ */
 export function attentionKind(session: SessionInfo, seen: SeenSequences = {}): AttentionKind | null {
   if (session.state === 'perm') return session.permissions[0]?.questions || session.permissions[0]?.secrets ? 'question' : 'permission';
   if (session.state === 'error') return unseen(session, seen) ? 'error' : null;
+  if (session.pmSummary?.asks) return 'decision';
   if (session.state === 'wait' && session.turns > 0 && !isPaused(session) && unseen(session, seen)) return 'finished';
   return null;
 }
 
-export const ATTENTION_RANK: Record<AttentionKind, number> = { permission: 0, question: 0, finished: 1, error: 2 };
+export const ATTENTION_RANK: Record<AttentionKind, number> = { permission: 0, question: 0, decision: 1, finished: 2, error: 3 };
 
-/** Permissions and questions first (the session is blocked), then finished turns, then errors; the one waiting the longest comes first in each group. */
+/**
+ * Permissions and questions first (the session is blocked), then the decisions PMs wait for, then finished turns, then
+ * errors; the one waiting the longest comes first in each group.
+ */
 export function attentionQueue(sessions: readonly SessionInfo[], seen: SeenSequences = {}): AttentionItem[] {
   return sessions
     .flatMap((session) => { const kind = attentionKind(session, seen); return kind ? [{ session, kind }] : []; })

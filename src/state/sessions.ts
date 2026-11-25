@@ -6,6 +6,7 @@ import { appendRunEvents, type RunLog } from './automata.ts';
 import type { ModInfo, ModSettings } from '../../shared/mods.ts';
 import { heardModEnv, heardModStore } from './mods.ts';
 import { heardPaths } from './path-mentions.ts';
+import { heardPmDetail, watchedPms } from './pm.ts';
 import type { KeysState, SecretEntry, VaultScope } from '../../shared/secrets.ts';
 import type { MessengerInput } from '../../shared/messengers.ts';
 import { create } from 'zustand';
@@ -70,7 +71,9 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 /** The latest search sent over every session's thread: only its answer is kept. */
 let searchId = 0;
 
-export interface Toast { id: number; kind: 'info' | 'error'; text: string }
+/** `action`: a button of the toast (Annuler), which closes it */
+export interface Toast { id: number; kind: 'info' | 'error'; text: string; action?: ToastAction }
+export interface ToastAction { label: string; run: () => void }
 
 /** What the palette or the "new session" dialog starts with. */
 /** What the launcher starts with: a command in its field, someone of the crew to take it (a click on a visitor). */
@@ -402,7 +405,7 @@ export interface CommandPostState {
   becomeSelf: (name: string) => boolean;
   openNewSession: (draft: NewSessionDraft | null) => void;
   closeLauncher: () => void;
-  toast: (kind: Toast['kind'], text: string) => void;
+  toast: (kind: Toast['kind'], text: string, action?: ToastAction) => void;
 
   /** false when the message could not leave (too long, not connected): the Launcher then keeps what was typed */
   createSession: (options: SessionOptions) => boolean;
@@ -556,10 +559,10 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   seen: readPreference<SeenSequences>('seen', {}),
   send: () => false,
 
-  toast: (kind, text) => {
+  toast: (kind, text, action) => {
     const id = ++toastId;
-    set((s) => ({ toasts: [...s.toasts, { id, kind, text }].slice(-4) }));
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' ? 8000 : 4500);
+    set((s) => ({ toasts: [...s.toasts, { id, kind, text, ...(action ? { action } : {}) }].slice(-4) }));
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' || action ? 8000 : 4500);
   },
 
   receive: (message) => {
@@ -598,6 +601,8 @@ export const useSessions = create<CommandPostState>((set, get) => ({
         for (const id of Object.keys(s.logs)) {
           if (sessions[id]) s.send({ t: 'log', sessionId: id, after: s.logs[id].at(-1)?.seq ?? 0 });
         }
+        // the PMs shown: a new connection watches nothing yet
+        if (watchedPms().length) s.send({ t: 'pmWatch', pms: watchedPms() });
         break;
       }
       case 'session': {
@@ -729,6 +734,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
       // an answer to an older query, overtaken by the one typed since, is dropped
       case 'searchResults': if (message.id === searchId) set({ searchResults: { id: message.id, query: message.query, hits: message.hits } }); break;
       case 'paths': heardPaths(message.id, message.query, message.paths); break;
+      case 'pmDetail': heardPmDetail(message.pm, message.detail); break;
       case 'costs': set({ costs: message.report }); break;
       case 'mods': set({ mods: message.mods }); break;
       case 'modCreated': get().openMod(message.id); break;

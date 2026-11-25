@@ -1,6 +1,7 @@
 // Runtime validation of what a WebSocket client sends. Nothing from the network is trusted: unknown or
 // malformed messages are dropped (null), strings are bounded.
 import { MESSENGER_ID, parseMessengerInput } from '../shared/messengers.ts';
+import { PM_ASK_ACTIONS, PM_LIMITS, type PmMemoryOp } from '../shared/pm.ts';
 import { RUN_ID } from '../shared/automata.ts';
 import { MAX_HOOK_BODY, parseTriggerInput, TRIGGER_ID } from '../shared/triggers.ts';
 import { ACCOUNTS_BROWSERS, BRANCH_ACTIONS, EFFORTS, isPermissionMode, MAX_SESSION_FILE, MAX_TEXT, type BranchAction, type CleanedBranch, type ClientMessage, type Effort, type FileAction, type ImageUpload, type InspectView, type McpAction, type PermissionDecision, type SessionOptions } from '../shared/protocol.ts';
@@ -181,6 +182,63 @@ function parseAnswers(raw: unknown): Record<string, string> | null {
 const MAX_AVATAR = 40_000;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+/** How many PMs one page may watch at once (one per open window, in practice). */
+const MAX_PM_WATCH = 16;
+/** A number of a task or question as the page sends it: a whole number from `min`. */
+const wholeNumber = (value: unknown, min: number): number | null => (Number.isSafeInteger(value) && (value as number) >= min ? (value as number) : null);
+
+/** A change of a PM's memory: a note added, or the one at `index` (from 0) changed or deleted. */
+function parseMemoryOp(raw: unknown): PmMemoryOp | null {
+  if (!isJson(raw)) return null;
+  const text = boundedString(raw.text, PM_LIMITS.note);
+  const index = wholeNumber(raw.index, 0);
+  const was = boundedString(raw.was, PM_LIMITS.note);
+  if (raw.op === 'add') return text === null ? null : { op: 'add', text };
+  if (raw.op === 'edit') return text === null || index === null || was === null ? null : { op: 'edit', index, was, text };
+  if (raw.op === 'delete') return index === null || was === null ? null : { op: 'delete', index, was };
+  return null;
+}
+
+/** The PM messages of the page; their guard (setting on, the session a PM) is the server's (server/pm-desk.ts). */
+function parsePmMessage(raw: Record<string, unknown>): ClientMessage | null {
+  if (raw.t === 'pmWatch') {
+    if (!Array.isArray(raw.pms)) return null;
+    const pms = raw.pms.map(identifier);
+    // too many: the first ones are watched
+    return pms.every((pm) => pm !== null) ? { t: 'pmWatch', pms: [...new Set(pms as string[])].slice(0, MAX_PM_WATCH) } : null;
+  }
+  const pm = identifier(raw.pm);
+  if (!pm) return null;
+  switch (raw.t) {
+    case 'pmEdit': {
+      const mission = raw.mission === undefined ? undefined : boundedString(raw.mission, PM_LIMITS.mission);
+      const instructions = raw.instructions === undefined ? undefined : boundedString(raw.instructions, PM_LIMITS.instructions);
+      const memory = raw.memory === undefined ? undefined : parseMemoryOp(raw.memory);
+      if (mission === null || instructions === null || memory === null || (mission === undefined && instructions === undefined && !memory)) return null;
+      return { t: 'pmEdit', pm, ...(mission !== undefined ? { mission } : {}), ...(instructions !== undefined ? { instructions } : {}), ...(memory ? { memory } : {}) };
+    }
+    case 'pmAsk': {
+      const ask = wholeNumber(raw.ask, 1);
+      const action = PM_ASK_ACTIONS.find((one) => one === raw.action);
+      if (ask === null || !action) return null;
+      if (action === 'answer') {
+        const answer = boundedString(raw.answer, PM_LIMITS.detail);
+        return answer?.trim() ? { t: 'pmAsk', pm, ask, action, answer } : null;
+      }
+      if (action === 'snooze') {
+        const until = wholeNumber(raw.until, 1);
+        return until === null ? null : { t: 'pmAsk', pm, ask, action, until };
+      }
+      return { t: 'pmAsk', pm, ask, action };
+    }
+    case 'pmItemArchive': {
+      const item = wholeNumber(raw.item, 0);
+      return item === null ? null : { t: 'pmItemArchive', pm, item };
+    }
+    default: return null;
+  }
+}
+
 export function parseClientMessage(raw: unknown): ClientMessage | null {
   if (!isJson(raw) || typeof raw.t !== 'string') return null;
   const sessionId = identifier(raw.sessionId);
@@ -303,6 +361,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     }
     case 'pmConvert': return sessionId ? { t: 'pmConvert', sessionId } : null;
     case 'pmRevert': return sessionId ? { t: 'pmRevert', sessionId } : null;
+    case 'pmWatch': case 'pmEdit': case 'pmAsk': case 'pmItemArchive': return parsePmMessage(raw);
     case 'restartOutdated': return { t: 'restartOutdated' };
     case 'restartApp': return { t: 'restartApp' };
     case 'checkApp': return { t: 'checkApp' };

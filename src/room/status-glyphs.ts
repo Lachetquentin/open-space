@@ -9,6 +9,8 @@ export const STATUS_GLYPHS: Readonly<Record<Exclude<Status, 'working' | null>, G
   compacting: [[1, 0], [2, 1], [3, 0], [0, 2], [1, 2], [2, 2], [3, 2], [4, 2], [1, 4], [2, 3], [3, 4]],
   permission: [[2, 0], [2, 1], [2, 2], [2, 4]],
   question: [[1, 0], [2, 0], [3, 0], [3, 1], [2, 2], [2, 4]],
+  // a PM's question waiting for the user's decision: the same mark
+  decision: [[1, 0], [2, 0], [3, 0], [3, 1], [2, 2], [2, 4]],
   finished: [[0, 2], [1, 3], [2, 2], [3, 1], [4, 0]],
   error: [[0, 0], [4, 0], [1, 1], [3, 1], [2, 2], [1, 3], [3, 3], [0, 4], [4, 4]],
 };

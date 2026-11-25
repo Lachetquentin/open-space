@@ -13,10 +13,10 @@ import { st } from './i18n/index.ts';
 const APP = path.join(os.homedir(), 'Applications', 'Open Space.app');
 const APP_ID = 'local.open-space';
 
-/** The words of a notification: who and what, then what they said or ask (shortened). */
-export function notificationText(session: SessionInfo, kind: AttentionKind): { title: string; body: string } {
+/** The words of a notification: who and what, then what they said or ask (shortened); `said`: what it says, when the session does not hold it (a PM's question). */
+export function notificationText(session: SessionInfo, kind: AttentionKind, said?: string): { title: string; body: string } {
   const asked = session.permissions[0];
-  const body = kind === 'error' ? session.error ?? ''
+  const body = said !== undefined ? said : kind === 'error' ? session.error ?? ''
     : kind === 'finished' ? session.lastMessage
       : asked?.questions?.[0]?.question ?? asked?.detail ?? '';
   return { title: `${session.name} ${st.notifier[kind]}`, body: body.replace(/\s+/g, ' ').trim().slice(0, 180) };
@@ -37,8 +37,8 @@ const VIA_APP = [
 ];
 const PLAIN = ['on run argv', '  display notification (item 2 of argv) with title (item 1 of argv)', 'end run'];
 
-export function notify(session: SessionInfo, kind: AttentionKind, log: (message: string, error?: unknown) => void) {
-  const { title, body } = notificationText(session, kind);
+export function notify(session: SessionInfo, kind: AttentionKind, log: (message: string, error?: unknown) => void, said?: string) {
+  const { title, body } = notificationText(session, kind, said);
   if (appPort) { appPort.postMessage({ t: 'notify', title, body, sessionId: session.id }); return; }
   if (process.platform !== 'darwin') return;
   const script = existsSync(APP) ? VIA_APP : PLAIN;

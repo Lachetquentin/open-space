@@ -416,11 +416,12 @@ export const session = {
     allow: (tool: string | undefined, name: string) => `Autoriser ${tool ?? 'une action'} pour ${name}`,
     switchBrowser: (name: string) => `Valider le navigateur de ${name}`,
     answer: (name: string) => `Répondre à ${name}`,
+    decide: (name: string) => `Décider pour ${name}`,
     read: (name: string) => `Lire ${name}`,
     error: (name: string) => `Voir l’erreur de ${name}`,
   },
   states: {
-    attention: { permission: 'Autorisation', question: 'Question pour toi', finished: 'Terminé, à voir', error: 'Erreur' },
+    attention: { permission: 'Autorisation', question: 'Question pour toi', decision: 'Décision pour toi', finished: 'Terminé, à voir', error: 'Erreur' },
     starting: 'Démarre',
     compacting: { auto: 'Compactage auto', manual: 'Compactage' },
     work: 'Au travail',

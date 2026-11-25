@@ -73,17 +73,20 @@ export const PM_TOOL_USAGE: Record<(typeof PM_TOOL_NAMES)[number], string> = {
   pm_worker_stop: 'pm_worker_stop({ session | item })',
 };
 
-/** What a message sent to a PM by Open Space is: a worker's report, the user's answer to a question, or the PM's setup. */
-export type PmMessageTag = { report: { worker: string; kind: ReportKind } } | { answer: { ask: number } } | { setup: true };
+/**
+ * What a message sent to a PM by Open Space is: a worker's report, the user's answer to a question, the PM's setup, or
+ * the note of what the user changed in its plan from the page (mission, instructions, memory).
+ */
+export type PmMessageTag = { report: { worker: string; kind: ReportKind } } | { answer: { ask: number } } | { setup: true } | { change: true };
 
 /** What a message to a PM is by its tag; null for an ordinary message. */
-export function pmMessageKind(tag: PmMessageTag | undefined): 'report' | 'answer' | 'setup' | null {
+export function pmMessageKind(tag: PmMessageTag | undefined): 'report' | 'answer' | 'setup' | 'change' | null {
   if (!tag) return null;
-  return 'report' in tag ? 'report' : 'answer' in tag ? 'answer' : 'setup';
+  return 'report' in tag ? 'report' : 'answer' in tag ? 'answer' : 'change' in tag ? 'change' : 'setup';
 }
 
-/** Written by Open Space (a PM's setup, a worker's report), not by the user: an answer is the user's own words. */
-export const fromOpenSpace = (tag: PmMessageTag | undefined): boolean => { const kind = pmMessageKind(tag); return kind === 'setup' || kind === 'report'; };
+/** Written by Open Space (a PM's setup, a worker's report, the note of a change), not by the user: an answer is the user's own words. */
+export const fromOpenSpace = (tag: PmMessageTag | undefined): boolean => { const kind = pmMessageKind(tag); return kind === 'setup' || kind === 'report' || kind === 'change'; };
 
 /** The PM settings (Preferences.pm): off, no PM tools nor reports; `quietMinutes` of silence before a worker is nudged. */
 export interface PmSettings { enabled: boolean; quietMinutes: number; lastModel?: string }
@@ -175,6 +178,7 @@ const parseWorker = (raw: Raw): PmWorker | undefined => {
 export function parsePmTag(raw: unknown): PmMessageTag | undefined {
   if (!isRaw(raw)) return undefined;
   if (raw.setup === true) return { setup: true };
+  if (raw.change === true) return { change: true };
   if (isRaw(raw.report)) {
     const worker = session(raw.report.worker);
     const kind = oneOf(raw.report.kind, REPORT_KINDS);
@@ -210,6 +214,10 @@ export function parsePmFile(raw: unknown): PmFile {
 export type ShownStatus = 'dropped' | 'done' | 'blocked' | 'needsYou' | 'inProgress' | 'waiting' | 'idle' | 'later';
 /** What a worker session is doing now; `waiting` is a permission or a question waiting for the user. */
 export interface WorkerLive { session: string; working: boolean; waiting: boolean }
+
+/** What these sessions are doing now, as a PM's plan reads it. */
+export const workerLive = (sessions: readonly { id: string; state: string }[]): WorkerLive[] =>
+  sessions.map((one) => ({ session: one.id, working: one.state === 'work' || one.state === 'starting', waiting: one.state === 'perm' }));
 
 /** The waits of a task not lifted yet: a wait on a question ends once it is settled, on a task once it is finished or dropped,
  * and on either once it is gone. */
@@ -261,4 +269,58 @@ export function parseTag(text: string): { item?: number; ask?: number } | null {
 /** The message that carries the user's answer to the PM: "W4 Q3: iPhone only", or "Q3: …" for a question about no task. */
 export function answerMessage(ask: PmAsk, answer: string): string {
   return `${fullAskTag(ask)}: ${answer}`;
+}
+
+/** What a PM's line in the list says first: a task blocked, then something for the user, then workers at work, else calm. */
+export type PmLine = 'blocked' | 'yours' | 'working' | 'calm';
+/**
+ * A PM's counters, sent with its session to the pages (never kept in sessions.json): open tasks, questions waiting for the
+ * user, workers still on the job and those at work; `nextWake`: when the nearest snoozed question comes back.
+ */
+export interface PmSummary { items: number; asks: number; workers: number; working: number; line: PmLine; nextWake?: number }
+/** What the page that looks at a PM gets: its file without the report keys, and what its workers are doing now. */
+export type PmDetail = Omit<PmFile, 'reports'> & { pm: string; live: WorkerLive[] };
+/** A change of a PM's memory from the page; `index`: the note's place in the memory, from 0; `was`: its text as the page saw it. */
+export type PmMemoryOp = { op: 'add'; text: string } | { op: 'edit'; index: number; was: string; text: string } | { op: 'delete'; index: number; was: string };
+export const PM_ASK_ACTIONS = ['answer', 'snooze', 'wake', 'dismiss', 'undoDismiss'] as const;
+export type PmAskAction = (typeof PM_ASK_ACTIONS)[number];
+
+/** A question still open is snoozed while its snooze is ahead of `now`. */
+const snoozed = (ask: PmAsk, now: number): boolean => ask.state === 'open' && (ask.snoozedUntil ?? 0) > now;
+
+/** The questions as the user sees them: open (a snooze past brings one back), snoozed, and settled one way or another. */
+export function asksShown(file: PmFile, now: number): { open: PmAsk[]; snoozed: PmAsk[]; settled: PmAsk[] } {
+  return {
+    open: file.asks.filter((ask) => ask.state === 'open' && !snoozed(ask, now)),
+    snoozed: file.asks.filter((ask) => snoozed(ask, now)),
+    settled: file.asks.filter((ask) => ask.state !== 'open'),
+  };
+}
+
+/** A PM's counters and line (PmSummary), from its file and what its workers are doing now. */
+export function pmSummary(file: PmFile, live: readonly WorkerLive[], now: number): PmSummary {
+  const open = file.items.filter((item) => !item.archived && item.state !== 'finished' && item.state !== 'dropped');
+  const asks = asksShown(file, now);
+  const workers = file.workers.filter((worker) => !worker.resolvedAt);
+  const mine = live.filter((one) => workers.some((worker) => worker.session === one.session));
+  const working = mine.filter((one) => one.working).length;
+  const blocked = open.some((item) => itemStatus(item, file, live) === 'blocked');
+  const line: PmLine = blocked ? 'blocked' : asks.open.length || mine.some((one) => one.waiting) ? 'yours' : working ? 'working' : 'calm';
+  const wakes = asks.snoozed.map((ask) => ask.snoozedUntil ?? 0);
+  return { items: open.length, asks: asks.open.length, workers: workers.length, working, line, ...(wakes.length ? { nextWake: Math.min(...wakes) } : {}) };
+}
+
+/**
+ * The answer to an open question in a message the user typed to its PM: "W4 Q3: iPhone only", or "Q3: …"; null when the
+ * message starts with no such tag, names another task than the question's, or says nothing after the colon.
+ */
+export function typedAnswer(file: PmFile, text: string): { ask: number; answer: string } | null {
+  const colon = text.indexOf(':');
+  if (colon < 0) return null;
+  const tag = parseTag(text.slice(0, colon));
+  const answer = text.slice(colon + 1).trim();
+  if (!tag || tag.ask === undefined || !answer) return null;
+  const ask = file.asks.find((one) => one.no === tag.ask && one.state === 'open');
+  if (!ask || (tag.item !== undefined && tag.item !== ask.item)) return null;
+  return { ask: ask.no, answer };
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { PM_LIMITS } from '../shared/pm.ts';
 import { MAX_TEXT } from '../shared/protocol.ts';
 import { MAX_NAME, parseClientMessage } from './messages.ts';
 
@@ -28,6 +29,48 @@ describe('parseClientMessage', () => {
     assert.deepEqual(parseClientMessage({ t: 'pmRevert', sessionId: 's1' }), { t: 'pmRevert', sessionId: 's1' });
     assert.equal(parseClientMessage({ t: 'pmConvert' }), null);
     assert.equal(parseClientMessage({ t: 'pmRevert', sessionId: '../x' }), null);
+  });
+
+  it('reads the PMs a page looks at: session ids only, each once', () => {
+    assert.deepEqual(parseClientMessage({ t: 'pmWatch', pms: ['p1', 'p2', 'p1'] }), { t: 'pmWatch', pms: ['p1', 'p2'] });
+    assert.deepEqual(parseClientMessage({ t: 'pmWatch', pms: [] }), { t: 'pmWatch', pms: [] }, 'none any more');
+    assert.equal(parseClientMessage({ t: 'pmWatch', pms: ['../x'] }), null);
+    assert.equal(parseClientMessage({ t: 'pmWatch', pms: 'p1' }), null);
+  });
+
+  it('keeps the first PMs of a page that watches too many, each counted once', () => {
+    const many = ['p0', 'p0', ...Array.from({ length: 50 }, (_, index) => `p${index}`)];
+    const watched = parseClientMessage({ t: 'pmWatch', pms: many });
+    assert.deepEqual(watched, { t: 'pmWatch', pms: Array.from({ length: 16 }, (_, index) => `p${index}`) });
+  });
+
+  it('reads a change of a PM’s mission, instructions or memory within their limits', () => {
+    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', mission: 'Ship', other: 1 }), { t: 'pmEdit', pm: 'p1', mission: 'Ship' });
+    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', instructions: '' }), { t: 'pmEdit', pm: 'p1', instructions: '' }, 'cleared');
+    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', memory: { op: 'edit', index: 0, was: 'w', text: 'x' } }), { t: 'pmEdit', pm: 'p1', memory: { op: 'edit', index: 0, was: 'w', text: 'x' } });
+    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', memory: { op: 'delete', index: 2, was: 'w', text: 'x' } }), { t: 'pmEdit', pm: 'p1', memory: { op: 'delete', index: 2, was: 'w' } });
+    for (const bad of [
+      { pm: 'p1' }, { pm: '../x', mission: 'x' }, { pm: 'p1', mission: 'x'.repeat(PM_LIMITS.mission + 1) }, { pm: 'p1', instructions: 'x'.repeat(PM_LIMITS.instructions + 1) },
+      { pm: 'p1', memory: { op: 'add', text: 'x'.repeat(PM_LIMITS.note + 1) } }, { pm: 'p1', memory: { op: 'edit', index: -1, was: 'w', text: 'x' } }, { pm: 'p1', memory: { op: 'delete', index: 0 } },
+      { pm: 'p1', memory: { op: 'delete', index: 1.5, was: 'w' } }, { pm: 'p1', memory: { op: 'move', index: 0 } }, { pm: 'p1', mission: 3 },
+    ]) assert.equal(parseClientMessage({ t: 'pmEdit', ...bad }), null, JSON.stringify(bad));
+  });
+
+  it('reads what the user does with a question: an answer needs its text, a snooze its time', () => {
+    assert.deepEqual(parseClientMessage({ t: 'pmAsk', pm: 'p1', ask: 3, action: 'answer', answer: 'iPhone', until: 5 }), { t: 'pmAsk', pm: 'p1', ask: 3, action: 'answer', answer: 'iPhone' });
+    assert.deepEqual(parseClientMessage({ t: 'pmAsk', pm: 'p1', ask: 3, action: 'snooze', until: 1_800_000_000_000 }), { t: 'pmAsk', pm: 'p1', ask: 3, action: 'snooze', until: 1_800_000_000_000 });
+    assert.deepEqual(parseClientMessage({ t: 'pmAsk', pm: 'p1', ask: 3, action: 'dismiss', answer: 'x' }), { t: 'pmAsk', pm: 'p1', ask: 3, action: 'dismiss' });
+    for (const bad of [
+      { ask: 3, action: 'answer' }, { ask: 3, action: 'answer', answer: '' }, { ask: 3, action: 'answer', answer: 'x'.repeat(PM_LIMITS.detail + 1) },
+      { ask: 3, action: 'snooze' }, { ask: 3, action: 'snooze', until: -1 }, { ask: 0, action: 'wake' }, { ask: '3', action: 'wake' }, { ask: 3, action: 'withdraw' },
+    ]) assert.equal(parseClientMessage({ t: 'pmAsk', pm: 'p1', ...bad }), null, JSON.stringify(bad));
+  });
+
+  it('reads the archiving of one task, or of all with 0', () => {
+    assert.deepEqual(parseClientMessage({ t: 'pmItemArchive', pm: 'p1', item: 0 }), { t: 'pmItemArchive', pm: 'p1', item: 0 });
+    assert.deepEqual(parseClientMessage({ t: 'pmItemArchive', pm: 'p1', item: 4 }), { t: 'pmItemArchive', pm: 'p1', item: 4 });
+    assert.equal(parseClientMessage({ t: 'pmItemArchive', pm: 'p1', item: -1 }), null);
+    assert.equal(parseClientMessage({ t: 'pmItemArchive', pm: 'p1' }), null);
   });
 
   it('reads a request to stop a background task of a session', () => {

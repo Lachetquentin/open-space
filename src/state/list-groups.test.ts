@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { SessionInfo } from '../../shared/protocol.ts';
-import { listGroups } from './list-groups.ts';
+import { listGroups, shownWorkers } from './list-groups.ts';
 
 const session = (id: string, cwd: string, extra: Partial<SessionInfo> = {}) =>
   ({ id, name: id, cwd, state: 'wait', turns: 1, permissions: [], subagents: [], createdAt: 0, stateSince: 0, lastSeq: 1, ...extra }) as unknown as SessionInfo;
@@ -48,5 +48,53 @@ describe('the list in groups', () => {
     const recent = session('r', '/code/app', { stateSince: 9 });
     const asking = session('p', '/code/app', { state: 'perm', permissions: [{}], stateSince: 0 } as unknown as Partial<SessionInfo>);
     assert.deepEqual(keys(listGroups([old, recent, asking], {}, 'state')), [['waiting', ['p', 'r', 'o']]]);
+  });
+});
+
+describe('the list with project managers', () => {
+  const summary = { items: 2, asks: 0, workers: 2, working: 1, line: 'working' } as const;
+  const rows = (groups: ReturnType<typeof listGroups>) => groups.map((group) => [group.key, group.rows.map((row) => [row.session.id, (row.workers ?? []).map((each) => each.id)])]);
+  const lead = session('pm', '/code/app', { pm: true, pmSummary: summary });
+  const atWork = session('w1', '/code/app', { pmOf: 'pm', state: 'work' });
+  const asking = session('w2', '/code/app', { pmOf: 'pm', state: 'perm', permissions: [{}] } as unknown as Partial<SessionInfo>);
+
+  it('by project: the PM heads its project with its workers under it; a worker in another project stays there', () => {
+    const other = session('o', '/code/app', { state: 'work', stateSince: 9 });
+    const far = session('far', '/code/site', { pmOf: 'pm', state: 'work' });
+    assert.deepEqual(rows(listGroups([other, lead, atWork, far], { pm: 1 }, 'project')), [
+      ['project:/code/app', [['pm', ['w1']], ['o', []]]],
+      ['project:/code/site', [['far', []]]],
+    ]);
+  });
+
+  it('by state: a worker goes under its PM in the same group, one waiting for the user stays in the waiting group at its place', () => {
+    const working = { ...lead, state: 'work' } as SessionInfo;
+    assert.deepEqual(rows(listGroups([working, atWork, asking], {}, 'state')), [['working', [['pm', ['w1']]]], ['waiting', [['w2', []]]]]);
+    // the PM waits too (its reply unread): its worker still is not put under it
+    assert.deepEqual(rows(listGroups([lead, asking], {}, 'state')), [['waiting', [['w2', []], ['pm', []]]]]);
+    // in another project than its PM's, it stays at its place in the group they share
+    const far = session('far', '/code/site', { pmOf: 'pm', state: 'work' });
+    assert.deepEqual(rows(listGroups([working, far], {}, 'state')), [['working', [['pm', []], ['far', []]]]]);
+  });
+
+  it('a PM with the setting off, or made an ordinary session again, leaves the list flat', () => {
+    for (const [why, ordinary] of [['setting off', { pm: true }], ['reverted', {}]] as const) {
+      const former = session('pm', '/code/app', { ...ordinary, state: 'work' });
+      assert.deepEqual(rows(listGroups([former, atWork], {}, 'state')), [['working', [['pm', []], ['w1', []]]]], why);
+      assert.deepEqual(rows(listGroups([former, atWork], {}, 'project')), [['project:/code/app', [['pm', []], ['w1', []]]]], why);
+    }
+  });
+
+  it('a folded PM still shows its worker waiting for the user', () => {
+    const [group] = listGroups([lead, atWork, asking], { pm: 1 }, 'project');
+    const row = group.rows[0];
+    assert.deepEqual(shownWorkers(row, false, {}, new Set()).map((each) => each.id), ['w1', 'w2']);
+    assert.deepEqual(shownWorkers(row, true, {}, new Set()).map((each) => each.id), ['w2']);
+  });
+
+  it('a folded PM still shows its open worker, and hides the other idle ones', () => {
+    const [group] = listGroups([lead, atWork, asking], { pm: 1 }, 'project');
+    assert.deepEqual(shownWorkers(group.rows[0], true, {}, new Set(['w1'])).map((each) => each.id), ['w1', 'w2']);
+    assert.deepEqual(shownWorkers(group.rows[0], true, {}, new Set()).map((each) => each.id), ['w2']);
   });
 });

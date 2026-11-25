@@ -4,7 +4,7 @@
 // Every change goes through the PM's file (server/pm.ts, server/pm-ops.ts); each result ends with the questions the user
 // set aside since the PM last heard, as a second text block.
 // mcp.ts imports this file's values: what comes from it is only used inside functions, once both are loaded.
-import { askTag, fullAskTag, itemStatus, itemTag, type PmFile, type PmItem, PM_TOOL_NAMES, PM_TOOL_USAGE, parseTag, REPORT_WORDS, type WorkerLive } from '../shared/pm.ts';
+import { askTag, fullAskTag, itemStatus, itemTag, type PmFile, type PmItem, PM_TOOL_NAMES, PM_TOOL_USAGE, parseTag, REPORT_WORDS, type WorkerLive, workerLive } from '../shared/pm.ts';
 import { EFFORTS, type SessionInfo } from '../shared/protocol.ts';
 import { st } from './i18n/index.ts';
 import { asArray, asString, type Json } from './json.ts';
@@ -145,10 +145,6 @@ function whichWorker(file: PmFile, sessions: SessionInfo[], asked: string): stri
   return one(byName.length ? byName : called(file.workers), () => asked);
 }
 
-/** What a worker session is doing now, for the statuses of the tasks. */
-const liveOf = (sessions: SessionInfo[]): WorkerLive[] =>
-  sessions.map((one) => ({ session: one.id, working: one.state === 'work' || one.state === 'starting', waiting: one.state === 'perm' }));
-
 const shownItem = (item: PmItem, file: PmFile, live: WorkerLive[]) => ({
   tag: itemTag(item.no), title: item.title, status: itemStatus(item, file, live),
   ...(item.now ? { now: item.now } : {}), ...(item.done ? { done: item.done } : {}),
@@ -156,7 +152,7 @@ const shownItem = (item: PmItem, file: PmFile, live: WorkerLive[]) => ({
 
 /** The PM's plan as pm_status shows it: what is still under way in full, what is over only counted (pm_item_list has it all). */
 function status(file: PmFile, sessions: SessionInfo[]) {
-  const live = liveOf(sessions);
+  const live = workerLive(sessions);
   const shown = file.items.filter((item) => !item.archived);
   const over = shown.filter((item) => item.state === 'finished' || item.state === 'dropped');
   return {
@@ -248,7 +244,7 @@ export async function callPmTool(api: OpenSpaceApi, pm: string, name: string, ar
   switch (name) {
     case 'pm_status': return run(book, pm, (file) => status(file, api.sessions()));
     case 'pm_item_list': return run(book, pm, (file) => {
-      const live = liveOf(api.sessions());
+      const live = workerLive(api.sessions());
       return file.items.filter((one) => !one.archived).map((one) => fullItem(one, file, live));
     });
     case 'pm_set_mission': return run(book, pm, (file) => { setMission(file, asString(args.mission)); return 'saved'; });
@@ -271,7 +267,7 @@ export async function callPmTool(api: OpenSpaceApi, pm: string, name: string, ar
       if (args.status === 'done' || args.status === 'drop' || args.status === 'later' || args.status === 'restore') update.status = args.status;
       return run(book, pm, (file) => {
         const changed = updateItem(file, update, now);
-        return isErr(changed) ? changed : fullItem(changed, file, liveOf(api.sessions()));
+        return isErr(changed) ? changed : fullItem(changed, file, workerLive(api.sessions()));
       });
     }
     case 'pm_ask': return run(book, pm, (file) => {

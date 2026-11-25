@@ -3,7 +3,8 @@
 // look, as in the room), its state as a sign on the face, how long it has been so, and its tags (else its last words). A click opens it beside the open ones (or goes to it when open); a
 // group folds away, and the whole list down to the faces (remembered in this browser). A project's + (on hover, or
 // Alt+its digit, App.tsx) opens a new session in its folder, its other button a new project manager there (PM, while the
-// setting is on). A PM wears a badge; a worker names its PM.
+// setting is on). A PM wears a badge, says how its plan is going and has its workers under it (they fold away, remembered
+// per PM, except those waiting for the user); its mission shows beside it under the pointer. A worker shown elsewhere names its PM.
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent } from 'react';
 import { t } from '../i18n/index.ts';
 import { formatAge, formatAgo } from '../lib/format.ts';
@@ -13,21 +14,35 @@ import { useNow } from '../lib/useNow.ts';
 import { sessionStatus } from '../room/cast.ts';
 import { stateLabel } from '../state/labels.ts';
 import { attentionKind, isWorking, type SeenSequences } from '../state/queue.ts';
-import { LIST_GROUPINGS, listGroups, type Kept, type ListGrouping } from '../state/list-groups.ts';
+import { LIST_GROUPINGS, listGroups, shownWorkers, type Kept, type ListGroup, type ListGrouping } from '../state/list-groups.ts';
 import { usePendingLater } from '../state/pending-later.ts';
 import { inProject, projectDigit, projectsOf } from '../state/projects.ts';
 import { useSessions } from '../state/sessions.ts';
 import { useProjects } from '../state/useProjects.ts';
 import type { SessionInfo } from '../../shared/protocol.ts';
-import { pmSettings } from '../../shared/pm.ts';
+import { pmSettings, type PmSummary } from '../../shared/pm.ts';
 import { PmBadge } from '../design/PmBadge.tsx';
 import { leadOf } from '../state/pm.ts';
+import { usePmDetail } from '../state/usePmDetail.ts';
 import { BranchMark } from './BranchCard.tsx';
 import { CheckIcon, ChevronDownIcon, FilterIcon, FoldListIcon, PlusIcon, PmIcon, UnfoldListIcon } from './Icons.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { useMenuBelow } from './useMenuBelow.ts';
 import { SessionFace } from './SessionFace.tsx';
 import { TagChips } from './TagChips.tsx';
+
+/** What a PM's line says first (Bloqué, À toi, N au travail, Calme). */
+const pmLine = (summary: PmSummary): string => {
+  const words = t.pm.line;
+  return summary.line === 'working' ? words.working(summary.working) : words[summary.line];
+};
+
+/** A PM's counters: its open tasks, then its questions and workers when it has some (« 5 tâches · 1 question · 4 workers »). */
+const pmCounts = (summary: PmSummary): string => {
+  const words = t.pm.counts;
+  return [words.items(summary.items), summary.asks > 0 && words.asks(summary.asks), summary.workers > 0 && words.workers(summary.workers)]
+    .filter((part) => typeof part === 'string').join(' · ');
+};
 
 export function SessionList() {
   const sessions = useSessions((s) => s.sessions);
@@ -42,6 +57,15 @@ export function SessionList() {
     const next = folded.includes(group) ? folded.filter((other) => other !== group) : [...folded, group];
     writePreference('listFolded', next);
     setFolded(next);
+  };
+  // the PMs whose workers are folded away (those waiting for the user stay)
+  const [pmFolded, setPmFolded] = useState(() => readPreference<string[]>('listPmFolded', []));
+  const foldPm = (id: string) => {
+    const next = pmFolded.includes(id) ? pmFolded.filter((other) => other !== id) : [...pmFolded, id];
+    // a PM gone takes its fold with it
+    const kept = next.filter((other) => sessions[other]);
+    writePreference('listPmFolded', kept);
+    setPmFolded(kept);
   };
   const [narrow, setNarrow] = useState(() => readPreference('listNarrow', false));
   const toggleNarrow = () => {
@@ -80,12 +104,54 @@ export function SessionList() {
   const words = t.session.list;
   // folded down to the faces: the one under the pointer (or focused) says who it is beside the list
   const [peek, setPeek] = useState<{ id: string; x: number; y: number } | null>(null);
+  // a PM's says its mission in the wide list too
   const peekAt = (id: string) => (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
-    if (!narrow) return;
+    if (!narrow && !sessions[id]?.pmSummary) return;
     const box = event.currentTarget.getBoundingClientRect();
     setPeek({ id, x: box.right + 8, y: box.top + box.height / 2 });
   };
-  const peeked = narrow && peek ? sessions[peek.id] : undefined;
+  const peeked = peek ? sessions[peek.id] : undefined;
+  const item = (session: SessionInfo, group: ListGroup, nested: boolean) => {
+    const status = sessionStatus(session, seen);
+    const kind = attentionKind(session, seen);
+    const working = isWorking(session);
+    const elapsed = now - (working ? session.busySince ?? session.stateSince : session.stateSince);
+    // under its PM, a worker need not name it
+    const lead = pmOn && !nested ? leadOf(session, sessions) : undefined;
+    const summary = session.pmSummary;
+    return (
+      <button
+        type="button" className="cp-list__item" data-status={status ?? 'idle'} data-active={session.id === selectedId} aria-current={openIds.includes(session.id)}
+        title={narrow || summary ? undefined : words.open} aria-label={narrow ? session.name : undefined}
+        onClick={() => open(session.id)}
+        onMouseEnter={peekAt(session.id)} onFocus={peekAt(session.id)} onMouseLeave={() => setPeek(null)} onBlur={() => setPeek(null)}
+      >
+        <SessionFace session={session} resting={session.resting === true || group.state === 'resting'} />
+        <span className="cp-list__text">
+          <span className="cp-list__line">
+            <span className="cp-list__name">{session.name}</span>
+            {pmOn && session.pm && <PmBadge label={words.pmBadge} title={words.pmBadgeTitle} />}
+            {session.worktree && <BranchMark branch={session.worktree.branch} />}
+            {session.subagents.length > 0 && <span className="cp-list__agents">+{session.subagents.length}</span>}
+            {lead && <span className="cp-list__for">{words.pmFor(lead.name)}</span>}
+            <span className="cp-list__time">{working ? formatAge(elapsed) : formatAgo(elapsed)}</span>
+          </span>
+          {/* a PM: how its plan goes; else its tags say what it is about at a glance, without any its last words */}
+          {summary ? (
+            <span className="cp-list__line">
+              <span className="cp-list__pm-line" data-line={summary.line}>{pmLine(summary)}</span>
+              <span className="cp-list__last">{pmCounts(summary)}</span>
+            </span>
+          ) : (
+            <span className="cp-list__line" title={session.lastMessage || undefined}>
+              {session.tags?.length ? <span className="cp-list__tags"><TagChips tags={session.tags} className="cp-list__tag" /></span>
+                : <span className="cp-list__last">{session.lastMessage || stateLabel(session, kind)}</span>}
+            </span>
+          )}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <nav className="cp-list" aria-label={words.title} data-narrow={narrow}>
@@ -108,37 +174,22 @@ export function SessionList() {
               {group.folder && <NewInProject folder={group.folder} label={titleOf(group)} digit={projectDigit(projects, group.folder)} onOpen={openNewSession} pm={pmOn} />}
             </h2>
             <ul className="cp-list__items" id={`list-${group.key}`} hidden={folded.includes(group.key)}>
-              {group.sessions.map((session) => {
-                const status = sessionStatus(session, seen);
-                const kind = attentionKind(session, seen);
-                const working = isWorking(session);
-                const elapsed = now - (working ? session.busySince ?? session.stateSince : session.stateSince);
-                const lead = pmOn ? leadOf(session, sessions) : undefined;
+              {group.rows.map((row) => {
+                const { session, workers } = row;
+                if (!workers) return <li key={session.id}>{item(session, group, false)}</li>;
+                const pmFold = pmFolded.includes(session.id);
+                // folded down to the faces, every worker shows
+                const shown = narrow ? workers : shownWorkers(row, pmFold, seen, new Set([...openIds, ...(selectedId ? [selectedId] : [])]));
+                const label = pmFold ? t.pm.list.unfold(session.name) : t.pm.list.fold(session.name);
                 return (
-                  <li key={session.id}>
-                    <button
-                      type="button" className="cp-list__item" data-status={status ?? 'idle'} data-active={session.id === selectedId} aria-current={openIds.includes(session.id)}
-                      title={narrow ? undefined : words.open} aria-label={narrow ? session.name : undefined}
-                      onClick={() => open(session.id)}
-                      onMouseEnter={peekAt(session.id)} onFocus={peekAt(session.id)} onMouseLeave={() => setPeek(null)} onBlur={() => setPeek(null)}
-                    >
-                      <SessionFace session={session} resting={session.resting === true || group.state === 'resting'} />
-                      <span className="cp-list__text">
-                        <span className="cp-list__line">
-                          <span className="cp-list__name">{session.name}</span>
-                          {pmOn && session.pm && <PmBadge label={words.pmBadge} title={words.pmBadgeTitle} />}
-                          {session.worktree && <BranchMark branch={session.worktree.branch} />}
-                          {session.subagents.length > 0 && <span className="cp-list__agents">+{session.subagents.length}</span>}
-                          {lead && <span className="cp-list__for">{words.pmFor(lead.name)}</span>}
-                          <span className="cp-list__time">{working ? formatAge(elapsed) : formatAgo(elapsed)}</span>
-                        </span>
-                        {/* its tags say what it is about at a glance; without any, its last words */}
-                        <span className="cp-list__line" title={session.lastMessage || undefined}>
-                          {session.tags?.length ? <span className="cp-list__tags"><TagChips tags={session.tags} className="cp-list__tag" /></span>
-                            : <span className="cp-list__last">{session.lastMessage || stateLabel(session, kind)}</span>}
-                        </span>
-                      </span>
+                  <li key={session.id} className="cp-list__lead">
+                    {item(session, group, false)}
+                    <button type="button" className="cp-list__fold" aria-expanded={!pmFold} aria-controls={`workers-${session.id}`} aria-label={label} title={label} onClick={() => foldPm(session.id)}>
+                      <ChevronDownIcon />
                     </button>
+                    <ul className="cp-list__workers" id={`workers-${session.id}`} hidden={shown.length === 0}>
+                      {shown.map((worker) => <li key={worker.id}>{item(worker, group, true)}</li>)}
+                    </ul>
                   </li>
                 );
               })}
@@ -181,6 +232,8 @@ function NewInProject({ folder, label, digit, onOpen, pm }: { folder: string; la
 
 /** Who a face of the folded list is: name, tag, state and last words, beside it (as the room says what a click does). */
 function Peek({ session, seen, now, x, y }: { session: SessionInfo; seen: SeenSequences; now: number; x: number; y: number }) {
+  // a PM's mission is in its plan, watched while it shows
+  const mission = usePmDetail(session.pmSummary ? session.id : null)?.mission;
   const working = isWorking(session);
   const elapsed = now - (working ? session.busySince ?? session.stateSince : session.stateSince);
   return (
@@ -188,13 +241,15 @@ function Peek({ session, seen, now, x, y }: { session: SessionInfo; seen: SeenSe
       <span className="cp-list__line">
         <span className="cp-list__name">{session.name}</span>
         <TagChips tags={session.tags} className="cp-list__tag" />
-                          {session.worktree && <BranchMark branch={session.worktree.branch} />}
+        {session.worktree && <BranchMark branch={session.worktree.branch} />}
         {session.subagents.length > 0 && <span className="cp-list__agents">+{session.subagents.length}</span>}
       </span>
       <span className="cp-list__peek-state" data-status={sessionStatus(session, seen) ?? 'idle'}>
         {stateLabel(session, attentionKind(session, seen))} · {working ? formatAge(elapsed) : formatAgo(elapsed)}
       </span>
-      {session.lastMessage && <span className="cp-list__peek-last">{session.lastMessage.replace(/\*\*|`/g, '')}</span>}
+      {session.pmSummary && <span className="cp-list__peek-state" data-line={session.pmSummary.line}>{pmLine(session.pmSummary)} · {pmCounts(session.pmSummary)}</span>}
+      {mission ? <span className="cp-list__peek-last">{mission}</span>
+        : session.lastMessage && <span className="cp-list__peek-last">{session.lastMessage.replace(/\*\*|`/g, '')}</span>}
     </div>
   );
 }

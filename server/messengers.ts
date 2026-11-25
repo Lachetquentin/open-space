@@ -8,16 +8,21 @@
 // buttons. Keys are given by replying to their request with the values: the reply is deleted from the chat at once and
 // its text only goes to the session's key store, like the box in Open Space (never to its conversation, the agent nor
 // the log). Any other reply to one of these messages goes to its session, files included;
+// the open questions of the project managers (PM) are sent too, once each, their answers as buttons; one answered (a
+// button, or a reply to its message) goes through PmDesk.answer, the path of every channel, so the first answer wins;
 // commands start, stop and list sessions and triggers; plain words go to a small agent driving Open Space through its
 // MCP server (server/messenger-agent.ts), which never answers a permission.
 import { randomBytes, randomInt } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { MAX_MESSENGERS, MESSENGER_ID, type Messenger, type MessengerInput, type MessengerProblem } from '../shared/messengers.ts';
+import { asksShown, fullAskTag, type PmAsk, type PmFile } from '../shared/pm.ts';
 import type { LoggedEvent, PermissionDecision, PermissionPrompt, SessionInfo } from '../shared/protocol.ts';
 import type { SecretEntry } from '../shared/secrets.ts';
 import { SWITCH_BROWSER_TOOL, type Trigger, type TriggerRun } from '../shared/triggers.ts';
 import { st } from './i18n/index.ts';
+import { actsAsPm } from './pm-guards.ts';
+import type { Err } from './pm-ops.ts';
 import * as telegram from './telegram.ts';
 import type { Button, TelegramCallback, TelegramMessage, TelegramUpdate } from './telegram.ts';
 
@@ -40,6 +45,8 @@ interface Stored {
   conversation: string | null;
   /** the messages that asked for keys, kept on disk: a reply after a restart is deleted, never passed to the agent */
   keyRequests?: number[];
+  /** the PM questions sent and not settled yet, kept on disk: not sent again after a restart, and their buttons still answer */
+  pmAsks?: { key: string; chat: number; message: number; text: string }[];
 }
 
 export interface MessengersDeps {
@@ -65,6 +72,11 @@ export interface MessengersDeps {
   agent: (bot: { id: string; model: string }, text: string, conversation: string | null) => Promise<{ text: string; conversation: string | null }>;
   /** keeps the keys replied to a request for them (`requestId`, its wait), as the box in Open Space does: the names kept; throws when none is */
   giveSecrets: (sessionId: string, requestId: string, entries: readonly SecretEntry[]) => string[];
+  /**
+   * The PMs' questions: the setting, a PM's file at hand (undefined while it is read) and the one answer path of every
+   * channel (PmDesk.answer), which takes the first answer only.
+   */
+  pm: { enabled: () => boolean; file: (pm: string) => PmFile | undefined; answer: (pm: string, ask: number, answer: string) => Promise<PmAsk | Err> };
   onChange: () => void;
   log: (message: string, error?: unknown) => void;
   api?: typeof telegram;
@@ -79,6 +91,15 @@ interface KeyWait { sessionId: string; requestId: string; names: string[] }
 /** What a reply to a request for keys ends with: its wait settled with this outcome, or this said in the chat. */
 type KeysOutcome = { settle: string } | { say: string };
 type Question = NonNullable<PermissionPrompt['questions']>[number];
+
+/** The key of a PM question's message, after `bot|`: stable across restarts. */
+const pmKey = (pm: string, ask: number) => `pm:${pm}:${ask}`;
+const PM_KEY = /^pm:([\w-]+):(\d+)$/;
+/** The PM and the question number of a `sent` key (`bot|pm:<pm>:<no>`). */
+const pmOfKey = (key: string): { pm: string; no: number } => {
+  const [, pm = '', no = '0'] = PM_KEY.exec(key.slice(key.indexOf('|') + 1)) ?? [];
+  return { pm, no: Number(no) };
+};
 
 const linkCode = () => String(randomInt(100_000, 1_000_000));
 const busy = (session: SessionInfo) => session.state === 'work' || session.state === 'starting';
@@ -122,6 +143,17 @@ export function waitMessage(session: SessionInfo, wait: PermissionPrompt, choice
   return { text: telegram.fit(words.permission(who, wait.tool === SWITCH_BROWSER_TOOL ? words.switchBrowser : wait.tool ?? '', wait.detail ?? '')), buttons: [buttons] };
 }
 
+/** A PM's question, as a message and its buttons: one per answer offered (the recommended one set apart); none for a free question. */
+export function pmAskMessage(session: SessionInfo, ask: PmAsk): { text: string; buttons: Button[][] } {
+  const words = st.messengers;
+  const text = telegram.fit(`${words.pmAsk(session.name, fullAskTag(ask), ask.title, ask.detail)}\n\n${ask.answers.length ? words.orReply : words.replyToAnswer}`);
+  // the message the button is on tells its PM: only the question's number and the answer's place go in the button
+  // the mark of the recommended answer stays whole within a button's 60 characters
+  const label = (answer: string) => (answer === ask.recommended ? words.recommended(answer.slice(0, 60 - words.recommended('').length)) : answer.slice(0, 60));
+  const buttons = ask.answers.map((answer, index) => [{ text: label(answer), callback_data: `a:${ask.no}:${index}` }]);
+  return { text, buttons };
+}
+
 export class Messengers {
   private readonly deps: MessengersDeps;
   private readonly api: typeof telegram;
@@ -146,6 +178,8 @@ export class Messengers {
   private timer: NodeJS.Timeout | null = null;
   /** the plain words of each bot, answered one after the other (they resume the same conversation) */
   private readonly asking = new Map<string, Promise<unknown>>();
+  /** the PM questions being answered from a chat, by their `sent` key: a tick meanwhile does not say they were settled elsewhere */
+  private readonly answering = new Set<string>();
 
   constructor(deps: MessengersDeps) {
     this.deps = deps;
@@ -154,6 +188,14 @@ export class Messengers {
       const raw: unknown = JSON.parse(readFileSync(deps.file, 'utf8'));
       if (Array.isArray(raw)) this.bots = raw.filter((bot): bot is Stored => !!bot && typeof bot === 'object' && MESSENGER_ID.test(bot.id) && typeof bot.token === 'string').slice(0, MAX_MESSENGERS);
     } catch { /* none yet */ }
+    // the PM questions sent before a restart: still awaited, never sent twice
+    for (const bot of this.bots) {
+      for (const kept of Array.isArray(bot.pmAsks) ? bot.pmAsks : []) {
+        if (kept && typeof kept === 'object' && typeof kept.key === 'string' && PM_KEY.test(kept.key) && Number.isInteger(kept.chat) && Number.isInteger(kept.message) && typeof kept.text === 'string') {
+          this.sent.set(`${bot.id}|${kept.key}`, { chatId: kept.chat, messageId: kept.message, text: kept.text });
+        }
+      }
+    }
   }
 
   /** The bots as the page sees them. */
@@ -192,7 +234,10 @@ export class Messengers {
       linkCode: tokenChanged || !before ? linkCode() : before.linkCode, allSessions: input.allSessions, model: input.model,
       conversation: tokenChanged ? null : before?.conversation ?? null,
       ...(!tokenChanged && before?.keyRequests ? { keyRequests: before.keyRequests } : {}),
+      ...(!tokenChanged && before?.pmAsks ? { pmAsks: before.pmAsks } : {}),
     };
+    // another bot: the questions the one before sent are sent again by it
+    if (tokenChanged && before) this.forgetPmAsks(bot.id);
     this.bots = before ? this.bots.map((each) => (each.id === bot.id ? bot : each)) : [...this.bots, bot];
     this.write();
     if (tokenChanged || !before) { this.problems.delete(bot.id); this.listen(bot); }
@@ -226,6 +271,9 @@ export class Messengers {
     bot.chatId = null;
     bot.linkCode = linkCode();
     bot.conversation = null;
+    // another chat: the questions sent to the one before are sent to it
+    this.forgetPmAsks(bot.id);
+    delete bot.pmAsks;
     this.write();
     this.deps.onChange();
   }
@@ -280,6 +328,11 @@ export class Messengers {
     })();
   }
 
+  /** Forgets the PM questions a bot sent (in memory: the caller writes the file). */
+  private forgetPmAsks(botId: string) {
+    for (const key of [...this.sent.keys()]) if (key.startsWith(`${botId}|pm:`)) this.sent.delete(key);
+  }
+
   private async handle(bot: Stored, update: TelegramUpdate) {
     if (update.callback_query) return this.onButton(bot, update.callback_query);
     const message = update.message;
@@ -304,6 +357,13 @@ export class Messengers {
     const files = await this.received(bot, message);
     const replyTo = message.reply_to_message && this.about.get(`${bot.id}|${message.reply_to_message.message_id}`);
     const text = (message.text ?? message.caption ?? '').trim();
+    // words replied to a PM question's message are its answer, never passed to the PM a second time
+    const pmAsk = message.reply_to_message && !command && text ? this.pmAskAt(bot, message.reply_to_message.message_id) : undefined;
+    if (pmAsk) {
+      const refused = await this.answerPmAsk(bot, pmAsk, text);
+      if (refused) await this.say(bot, refused, message.message_id);
+      return;
+    }
     const question = message.reply_to_message && !command && text ? this.questionAt(bot, message.reply_to_message.message_id) : null;
     if (question) {
       await this.answerQuestion(bot, question.number, question.choice, text);
@@ -447,6 +507,7 @@ export class Messengers {
 
   private async onButton(bot: Stored, button: TelegramCallback) {
     const [kind, number, value] = (button.data ?? '').split(':');
+    if (kind === 'a') return this.onPmButton(bot, button, Number(number), Number(value));
     const choice = this.choices.get(Number(number));
     const done = (text?: string) => this.api.call(bot.token, 'answerCallbackQuery', { callback_query_id: button.id, ...(text ? { text } : {}) }).catch(() => undefined);
     if (!choice || choice.botId !== bot.id || button.message?.chat.id !== bot.chatId) return done(st.messengers.expired);
@@ -503,12 +564,74 @@ export class Messengers {
     return true;
   }
 
+  /** A tap on an answer of a PM question: the message it is on tells which, even after a restart. */
+  private async onPmButton(bot: Stored, button: TelegramCallback, no: number, index: number) {
+    const done = (text?: string) => this.api.call(bot.token, 'answerCallbackQuery', { callback_query_id: button.id, ...(text ? { text: text.slice(0, 190) } : {}) }).catch(() => undefined);
+    const key = button.message?.chat.id === bot.chatId ? this.pmAskAt(bot, button.message.message_id) : undefined;
+    const ask = key ? this.pmAskOf(key) : undefined;
+    const answer = ask?.no === no ? ask.answers[index] : undefined;
+    if (!key || !answer) return done(st.messengers.expired);
+    return done(await this.answerPmAsk(bot, key, answer) ?? undefined);
+  }
+
+  /** The question a PM question's message is about, while it is open; null once it is settled, undefined when that cannot be told now. */
+  private pmAskOf(key: string): PmAsk | null | undefined {
+    const { pm, no } = pmOfKey(key);
+    const session = this.deps.sessions().find((one) => one.id === pm);
+    // the PM is gone: its question with it
+    if (!session) return null;
+    // the setting off or the PM made an ordinary session: its questions are left as they are
+    if (!actsAsPm(session, this.deps.pm.enabled())) return undefined;
+    const file = this.deps.pm.file(pm);
+    if (!file) return undefined;
+    const ask = file.asks.find((one) => one.no === no);
+    return ask?.state === 'open' ? ask : null;
+  }
+
+  /** How a PM question was settled, as its message ends. */
+  private pmOutcome(key: string): string {
+    const { pm, no } = pmOfKey(key);
+    // a PM forgotten took its file with it: never read again (it would come back empty)
+    const gone = !this.deps.sessions().some((one) => one.id === pm);
+    const ask = gone ? undefined : this.deps.pm.file(pm)?.asks.find((one) => one.no === no);
+    return ask?.state === 'answered' && ask.answer ? st.messengers.answered(ask.answer) : st.messengers.askSettled;
+  }
+
+  /**
+   * Answers a PM question from the chat by the path every channel takes, where the first answer wins; its message is
+   * settled once the question is, whoever answered. What refused the answer, else null.
+   */
+  private async answerPmAsk(bot: Stored, key: string, answer: string): Promise<string | null> {
+    if (this.answering.has(key)) return st.messengers.expired;
+    const { pm, no } = pmOfKey(key);
+    this.answering.add(key);
+    try {
+      const answered = await this.deps.pm.answer(pm, no, answer);
+      if (!('error' in answered)) {
+        await this.settle(bot, key, st.messengers.answered(answered.answer ?? answer));
+        return null;
+      }
+      // answered elsewhere first, or withdrawn: its message says so
+      if (this.pmAskOf(key) === null) await this.settle(bot, key, this.pmOutcome(key));
+      return answered.error;
+    } finally {
+      this.answering.delete(key);
+    }
+  }
+
+  /** The `sent` key of the PM question a message of the bot asks, while it waits. */
+  private pmAskAt(bot: Stored, messageId: number): string | undefined {
+    for (const [key, sent] of this.sent) if (key.startsWith(`${bot.id}|pm:`) && sent.messageId === messageId) return key;
+    return undefined;
+  }
+
   /** The buttons of a wait taken off, and how it was answered added. */
   private async settle(bot: Stored, key: string, outcome: string) {
     const sent = this.sent.get(key);
     this.sent.delete(key);
     this.keyWaits.delete(key);
     if (!sent) return;
+    if (key.startsWith(`${bot.id}|pm:`)) this.keepPmAsks(bot);
     await this.api.call(bot.token, 'editMessageText', { chat_id: sent.chatId, message_id: sent.messageId, text: telegram.fit(`${sent.text}\n\n${outcome}`) }).catch(() => undefined);
   }
 
@@ -546,12 +669,49 @@ export class Messengers {
           pending.add(key);
           if (!this.sent.has(key)) await this.sendWait(bot, session, wait, key);
         }
+        await this.sendPmAsks(bot, session);
         await this.news(bot, session, follow.done);
       }
       for (const key of [...this.sent.keys()]) {
-        if (key.startsWith(`${bot.id}|`) && !pending.has(key)) await this.settle(bot, key, st.messengers.answeredElsewhere);
+        if (!key.startsWith(`${bot.id}|`) || pending.has(key)) continue;
+        // a PM question is settled once it is seen settled, whether the bot follows its PM now or not
+        if (key.startsWith(`${bot.id}|pm:`)) {
+          if (!this.answering.has(key) && this.pmAskOf(key) === null) await this.settle(bot, key, this.pmOutcome(key));
+        } else await this.settle(bot, key, st.messengers.answeredElsewhere);
       }
     }
+  }
+
+  /** The PM's open questions not sent yet (not those snoozed), while the setting is on and the session acts as a PM. */
+  private async sendPmAsks(bot: Stored, session: SessionInfo) {
+    if (!actsAsPm(session, this.deps.pm.enabled())) return;
+    const file = this.deps.pm.file(session.id);
+    if (!file) return;
+    for (const ask of asksShown(file, Date.now()).open) {
+      const key = `${bot.id}|${pmKey(session.id, ask.no)}`;
+      if (this.sent.has(key)) continue;
+      const { text, buttons } = pmAskMessage(session, ask);
+      // kept before sending: the next tick does not send it twice while this one waits for Telegram
+      this.sent.set(key, { chatId: bot.chatId!, messageId: 0, text });
+      try {
+        const message = await this.api.call<TelegramMessage>(bot.token, 'sendMessage', { chat_id: bot.chatId, text, ...(buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {}) });
+        this.sent.set(key, { chatId: bot.chatId!, messageId: message.message_id, text });
+        this.keepPmAsks(bot);
+        // once the question is settled, a reply to its message goes to the PM like any other
+        this.remember(bot, message.message_id, session.id);
+      } catch (error) {
+        this.sent.delete(key);
+        throw error;
+      }
+    }
+  }
+
+  /** The PM questions a bot sent and not settled yet, written in its file. */
+  private keepPmAsks(bot: Stored) {
+    const prefix = `${bot.id}|`;
+    bot.pmAsks = [...this.sent].filter(([key, sent]) => key.startsWith(`${prefix}pm:`) && sent.messageId)
+      .map(([key, sent]) => ({ key: key.slice(prefix.length), chat: sent.chatId, message: sent.messageId, text: sent.text })).slice(-KEPT_REPLIES);
+    this.write();
   }
 
   private async sendWait(bot: Stored, session: SessionInfo, wait: PermissionPrompt, key: string) {

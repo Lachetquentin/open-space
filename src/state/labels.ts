@@ -10,6 +10,8 @@ export type Tone = 'permission' | 'reply' | 'work' | 'error' | 'idle';
 
 /** `kind` is the session's attention kind (see queue.ts): a finished turn only stands out until the user has seen it. */
 export function toneOf(session: SessionInfo, kind: AttentionKind | null): Tone {
+  // a PM's open question waits for the user, whatever the PM does meanwhile
+  if (kind === 'decision') return 'permission';
   switch (session.state) {
     case 'perm': return 'permission';
     case 'wait': return kind === 'finished' ? 'reply' : isWorking(session) ? 'work' : 'idle';
@@ -94,6 +96,7 @@ export function todoLabel(session: SessionInfo, kind: AttentionKind): string {
   switch (kind) {
     case 'permission': return session.permissions[0]?.tool === SWITCH_BROWSER_TOOL ? t.session.todo.switchBrowser(session.name) : t.session.todo.allow(session.permissions[0]?.tool, session.name);
     case 'question': return t.session.todo.answer(session.name);
+    case 'decision': return t.session.todo.decide(session.name);
     case 'finished': return t.session.todo.read(session.name);
     case 'error': return t.session.todo.error(session.name);
   }

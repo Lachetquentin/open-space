@@ -111,7 +111,7 @@ type StopRequest = { reason: 'closed' | 'idle'; note: string; after?: () => void
 interface PendingRequest { input: Record<string, unknown>; suggestions: Json[]; prompt: PermissionPrompt; given?: (names: string[] | null) => void; fields?: ElicitationField[] }
 
 /** Session fields that are computed, not stored. */
-export type StoredInfo = Omit<SessionInfo, 'permissions' | 'lastSeq' | 'remote' | 'secrets' | 'inheritedSecrets' | 'checkout' | 'suggestion'>;
+export type StoredInfo = Omit<SessionInfo, 'permissions' | 'lastSeq' | 'remote' | 'secrets' | 'inheritedSecrets' | 'checkout' | 'suggestion' | 'pmSummary'>;
 
 /** How long a finished run stays after its last turn before closing (Session.finishAfterTurn), and one that never said so. */
 const FINISH_DELAY_MS = 5000;

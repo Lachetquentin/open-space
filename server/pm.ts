@@ -15,6 +15,9 @@ export class PmBook {
   private readonly dir: string;
   /** The last change queued for each PM, never rejected: the next one waits for it. */
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** Each PM's file as last read or written, for what cannot wait (a session's summary): a copy no caller changes. */
+  private readonly files = new Map<string, PmFile>();
+  private readonly listeners = new Set<(pm: string) => void>();
 
   constructor(dir: string) {
     this.dir = dir;
@@ -23,7 +26,22 @@ export class PmBook {
 
   /** The PM's file: empty when there is none, its readable part when it is damaged. */
   read(pm: string): Promise<PmFile> {
-    return this.queue(pm, (file) => this.load(file));
+    return this.queue(pm, async (file) => {
+      const data = await this.load(file);
+      this.files.set(pm, structuredClone(data));
+      return data;
+    });
+  }
+
+  /** The PM's file as last read or written, without waiting; undefined before its first read. Not to be changed. */
+  cached(pm: string): PmFile | undefined {
+    return this.files.get(pm);
+  }
+
+  /** Hears each PM whose file was written or removed, once that is done; gives what stops it. */
+  onChange(listener: (pm: string) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
   }
 
   /**
@@ -38,6 +56,8 @@ export class PmBook {
       const result = edit(data);
       const after = JSON.stringify(data);
       if (after !== before) await writeFileAtomic(file, after);
+      this.files.set(pm, structuredClone(data));
+      if (after !== before) this.tell(pm);
       return result;
     });
   }
@@ -45,7 +65,19 @@ export class PmBook {
   /** Deletes the PM's file, once the changes before are done. */
   remove(pm: string): Promise<void> {
     // the copy kept of a damaged file goes with it
-    return this.queue(pm, async (file) => { await rm(file, { force: true }); await rm(`${file}.bad`, { force: true }); });
+    return this.queue(pm, async (file) => {
+      await rm(file, { force: true });
+      await rm(`${file}.bad`, { force: true });
+      this.files.delete(pm);
+      this.tell(pm);
+    });
+  }
+
+  /** A listener that throws keeps neither the others nor the change from going on. */
+  private tell(pm: string) {
+    for (const listener of this.listeners) {
+      try { listener(pm); } catch { /* the listener's own failure, not the change's */ }
+    }
   }
 
   private queue<T>(pm: string, task: (file: string) => Promise<T>): Promise<T> {

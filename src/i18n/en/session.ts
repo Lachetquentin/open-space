@@ -398,11 +398,12 @@ export const session: Dictionary['session'] = {
     allow: (tool, name) => `Allow ${tool ?? 'an action'} for ${name}`,
     switchBrowser: (name) => `Confirm ${name}'s browser`,
     answer: (name) => `Answer ${name}`,
+    decide: (name) => `Decide for ${name}`,
     read: (name) => `Read ${name}`,
     error: (name) => `See ${name}’s error`,
   },
   states: {
-    attention: { permission: 'Permission', question: 'Question for you', finished: 'Done, to review', error: 'Error' },
+    attention: { permission: 'Permission', question: 'Question for you', decision: 'Decision for you', finished: 'Done, to review', error: 'Error' },
     starting: 'Starting',
     compacting: { auto: 'Auto-compacting', manual: 'Compacting' },
     work: 'Working',

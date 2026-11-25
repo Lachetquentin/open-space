@@ -21,7 +21,7 @@ import { ChangesView, LineCounts } from './Changes.tsx';
 import { ContextChip, ContextView, McpView, UsageView } from './ClaudeViews.tsx';
 import { Composer, RemoteButton } from './Composer.tsx';
 import { INTERACTIVE, WindowDragContext } from './useWindowDrag.ts';
-import { Feed, type Subagent } from './Feed.tsx';
+import { Feed, type FeedFocus, ShowInFeedContext, type Subagent } from './Feed.tsx';
 import { FilesView } from './FilesView.tsx';
 import { SessionTabs } from './SessionTabs.tsx';
 import { BranchIcon, CloseIcon, DuplicateIcon, FolderIcon, MaximizeIcon, MinimizeIcon, MoreIcon, KeyIcon, PencilIcon, PhoneIcon, PlusIcon, PmIcon, PopOutIcon, PowerIcon, RestIcon, SearchIcon, TagIcon, TerminalIcon, UndoIcon } from './Icons.tsx';
@@ -152,12 +152,20 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
   const rest = () => { send({ t: 'rest', sessionId }); hide(); };
   // the sub-agent whose thread is shown, null for the conversation
   const [agent, setAgent] = useState<string | null>(null);
+  // where the conversation is asked to go (a question of the PM's Inbox shown where it was asked)
+  const [feedFocus, setFeedFocus] = useState<FeedFocus | null>(null);
   // the pictures of the next message: dropped anywhere on the panel, pasted or picked in the composer (App keys the
   // panel by session, so another session starts without them)
   const attachments = useAttachments();
   if (!session) return null;
 
   const back = () => showPanel('thread');
+  // the conversation, not a sub-agent's thread nor another view, then the place in it
+  const showInFeed = (at: number) => {
+    setAgent(null);
+    if (active && panelView !== 'thread') back();
+    setFeedFocus({ at, key: Date.now() });
+  };
   const [first, ...others] = session.permissions;
   const tags = session.tags ?? [];
   const hues = sessionTagHues(tags);
@@ -301,13 +309,15 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
         : panelView === 'mcp' ? <McpView sessionId={session.id} cwd={session.cwd} onBack={back} />
           : panelView === 'context' ? <ContextView sessionId={session.id} onBack={back} />
             : panelView === 'usage' ? <UsageView sessionId={session.id} onBack={back} />
-              : <Feed feed={feed} sessionId={session.id} loading={!loaded} speaker={session.name} working={isRunning(session) && session.state !== 'perm'} drafts={drafts} agent={agent} setAgent={setAgent} />}
+              : <Feed feed={feed} sessionId={session.id} loading={!loaded} speaker={session.name} working={isRunning(session) && session.state !== 'perm'} drafts={drafts} agent={agent} setAgent={setAgent} focus={feedFocus} onFocused={() => setFeedFocus(null)} />}
       <AsidePanel session={session} />
       {/* at the bottom, by the field, as in Claude Code */}
       {first && (first.secrets ? <SecretPrompt key={first.requestId} sessionId={session.id} prompt={first} />
         : first.questions ? <QuestionPrompt key={first.requestId} sessionId={session.id} prompt={first} />
         : <PermissionPrompt key={first.requestId} sessionId={session.id} prompt={first} more={others.length} />)}
-      <Composer key={session.id} session={session} attachments={attachments} />
+      <ShowInFeedContext value={showInFeed}>
+        <Composer key={session.id} session={session} attachments={attachments} />
+      </ShowInFeedContext>
     </aside>
   );
 });

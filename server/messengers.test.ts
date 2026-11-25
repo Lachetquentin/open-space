@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -10,12 +10,17 @@ import type { Trigger } from '../shared/triggers.ts';
 import { st } from './i18n/index.ts';
 import { buildAgentArgs } from './messenger-agent.ts';
 import { matchByName, Messengers, type MessengersDeps, waitMessage } from './messengers.ts';
+import { PmBook } from './pm.ts';
+import { PmDesk } from './pm-desk.ts';
+import { addAsk } from './pm-ops.ts';
 import * as telegram from './telegram.ts';
 
 let base: string;
 before(() => { base = mkdtempSync(path.join(os.tmpdir(), 'office-messengers-')); });
 after(() => rmSync(base, { recursive: true, force: true }));
 
+/** No PM questions: the setting off. */
+const noPm: MessengersDeps['pm'] = { enabled: () => false, file: () => undefined, answer: async () => ({ error: 'off' }) };
 const TOKEN = `123456:${'a'.repeat(35)}`;
 const until = async (check: () => boolean) => {
   for (let tries = 0; tries < 200 && !check(); tries++) await new Promise((resolve) => setTimeout(resolve, 5));
@@ -67,7 +72,7 @@ describe('the chat bots', () => {
       interrupt: (id) => done.push(`stop ${id}`), remote: (id) => done.push(`remote ${id}`),
       fire: async (id, payload) => { done.push(`fire ${id} ${payload}`); return { id: 'run1', triggerId: id, at: 0, source: 'manual', outcome: 'started', sessionId: 's2' }; },
       startSession: async () => session, folders: () => ['/work/pilou'], saveUpload: (name) => `0123456789abcdef/${name}`, attachment: () => null,
-      agent: async (_bot, text) => ({ text: `agent: ${text}`, conversation: 'c1' }), giveSecrets: () => [], onChange: () => {}, log: () => {},
+      agent: async (_bot, text) => ({ text: `agent: ${text}`, conversation: 'c1' }), giveSecrets: () => [], onChange: () => {}, log: () => {}, pm: noPm,
     });
     try {
       assert.equal(messengers.save(undefined, { name: 'Phone', token: TOKEN, allSessions: true, model: '' }), true);
@@ -126,7 +131,7 @@ describe('the chat bots', () => {
       sessions: () => [session], events: () => [], lastWords: () => 'Done here.', triggers: () => [],
       answer: () => {}, reply: () => {}, send: () => {}, interrupt: () => {}, remote: () => {}, fire: async () => { throw new Error('unused'); },
       startSession: async () => session, folders: () => ['/work/pilou'], saveUpload: (name) => name, attachment: () => null,
-      agent: async () => ({ text: '', conversation: null }), giveSecrets: () => [], onChange: () => {}, log: () => {},
+      agent: async () => ({ text: '', conversation: null }), giveSecrets: () => [], onChange: () => {}, log: () => {}, pm: noPm,
     });
     const finish = async () => {
       const before = fake.sent('sendMessage').length;
@@ -218,7 +223,7 @@ describe('keys given by replying to the bot', () => {
         if (names.length) session.permissions = [];
         return names;
       },
-      onChange: () => {}, log: (message, error) => elsewhere.push(`log ${message} ${String(error)}`),
+      onChange: () => {}, log: (message, error) => elsewhere.push(`log ${message} ${String(error)}`), pm: noPm,
     };
     const messengers = new Messengers(deps);
     messengers.save(undefined, { name: 'Phone', token: TOKEN, allSessions: true, model: '' });
@@ -383,6 +388,173 @@ describe('keys given by replying to the bot', () => {
       assert.equal(leaked(VALUE), false);
     } finally {
       messengers.stop();
+    }
+  });
+});
+
+describe('a PM’s questions on Telegram', () => {
+  const PM = 'pm-1';
+
+  /** A linked bot following a PM whose Q1 offers two answers (the second recommended), with a real PmDesk: what leaves is kept. */
+  async function pmOffice(file: string) {
+    const fake = fakeTelegram();
+    const setting = { enabled: true };
+    const delivered: string[] = [];
+    const session = { id: PM, name: 'Chef', cwd: '/work/pilou', state: 'wait', stateSince: 0, permissions: [], pm: true } as unknown as SessionInfo;
+    // the sessions open: the PM until a test forgets it
+    const office = [session];
+    // the PMs whose file was asked for
+    const reads: string[] = [];
+    const book = new PmBook(mkdtempSync(path.join(base, 'pm-')));
+    await book.change(PM, (plan) => { addAsk(plan, { title: 'Which phone?', detail: '', answers: ['iPhone', 'Android'], recommended: 'Android' }, 100); });
+    const desk = new PmDesk({
+      book, sessions: () => office, enabled: () => setting.enabled, now: Date.now, republish: () => {}, deliver: (_pm, text) => { delivered.push(text); },
+    });
+    const deps: MessengersDeps = {
+      file: path.join(base, file), api: fake.api,
+      sessions: () => office, events: () => [], lastWords: () => '', triggers: () => [],
+      answer: () => {}, reply: () => {}, send: () => {}, interrupt: () => {}, remote: () => {}, fire: async () => { throw new Error('unused'); },
+      startSession: async () => session, folders: () => ['/work/pilou'], saveUpload: (name) => name, attachment: () => null,
+      agent: async () => ({ text: '', conversation: null }), giveSecrets: () => [], onChange: () => {}, log: () => {},
+      pm: { enabled: () => setting.enabled, file: (pm) => { reads.push(pm); return book.cached(pm); }, answer: (pm, ask, answer) => desk.answer(pm, ask, answer) },
+    };
+    const messengers = new Messengers(deps);
+    messengers.save(undefined, { name: 'Phone', token: TOKEN, allSessions: true, model: '' });
+    fake.message(`/start ${messengers.list()[0]!.linkCode}`);
+    await until(() => messengers.list()[0]!.linked).catch((error: unknown) => { messengers.stop(); throw error; });
+    const asked = () => fake.sent('sendMessage').filter((each) => String(each.body.text).includes('Which phone?'));
+    const buttons = (call: { body: Record<string, unknown> }) => (call.body.reply_markup as { inline_keyboard: telegram.Button[][] }).inline_keyboard.flat();
+    /** a tap on the button of `answer` of the question's message */
+    const tap = (answer: string, id = 'cb') => {
+      const message = asked()[0]!;
+      const button = buttons(message).find((each) => each.text.includes(answer))!;
+      fake.push({ callback_query: { id, data: button.callback_data, message: { message_id: message.id!, chat: { id: 42 } } } });
+    };
+    const settled = () => fake.sent('editMessageText').filter((each) => each.body.message_id === asked()[0]?.id);
+    return { fake, setting, delivered, session, office, reads, book, desk, deps, messengers, asked, buttons, tap, settled };
+  }
+
+  it('sends each open question once, its answers as buttons with the recommended one set apart, and nothing while the setting is off', async () => {
+    const { fake, setting, book, messengers, asked, buttons } = await pmOffice('pm-once.json');
+    try {
+      setting.enabled = false;
+      await messengers.tick();
+      assert.equal(asked().length, 0, 'setting off: nothing');
+      setting.enabled = true;
+      await book.change(PM, (plan) => { addAsk(plan, { title: 'Snoozed one', detail: '', answers: ['Yes'] }, 100); plan.asks[1]!.snoozedUntil = Date.now() + 3_600_000; });
+      await messengers.tick();
+      await messengers.tick();
+      assert.equal(asked().length, 1, 'sent once');
+      assert.ok(!fake.sent('sendMessage').some((each) => String(each.body.text).includes('Snoozed one')), 'a snoozed question waits');
+      const labels = buttons(asked()[0]!).map((each) => each.text);
+      assert.equal(labels.length, 2, 'one button per answer');
+      assert.ok(labels.includes('iPhone'), 'an answer not recommended is shown as it is');
+      const marked = labels.filter((label) => label !== 'iPhone' && label !== 'Android');
+      assert.equal(marked.length, 1, 'only the recommended answer is marked');
+      assert.ok(marked[0]!.includes('Android'), 'the mark keeps the recommended answer');
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('takes a button as the answer once, even when the page answers at the same time, and the PM hears it once', async () => {
+    const { fake, delivered, book, desk, messengers, tap, settled } = await pmOffice('pm-button.json');
+    try {
+      await messengers.tick();
+      tap('iPhone', 'cb1');
+      const page = desk.answer(PM, 1, 'Android');
+      tap('iPhone', 'cb2');
+      await page;
+      await until(() => fake.sent('answerCallbackQuery').length === 2);
+      await messengers.tick();
+      assert.equal(delivered.length, 1, 'one answer reaches the PM');
+      assert.equal((await book.read(PM)).asks[0]!.answer, delivered[0]!.split(': ')[1]);
+      assert.equal(settled().length, 1, 'the message says it is settled, once');
+      assert.equal(settled()[0]!.body.reply_markup, undefined, 'its buttons go');
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('settles the message of a question answered in Open Space, whose button then answers nothing', async () => {
+    const { fake, delivered, desk, messengers, tap, settled } = await pmOffice('pm-elsewhere.json');
+    try {
+      await messengers.tick();
+      await desk.answer(PM, 1, 'Android');
+      await messengers.tick();
+      assert.equal(settled().length, 1);
+      tap('iPhone');
+      await until(() => fake.sent('answerCallbackQuery').length === 1);
+      assert.deepEqual(delivered, ['Q1: Android']);
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('settles the message of a forgotten PM’s question without asking for the file that went with it', async () => {
+    const { office, reads, book, messengers, settled } = await pmOffice('pm-forgotten.json');
+    try {
+      await messengers.tick();
+      office.length = 0;
+      await book.remove(PM);
+      reads.length = 0;
+      await messengers.tick();
+      assert.equal(settled().length, 1, 'its message says it is settled');
+      // the server reads a file not at hand, and would keep an empty one for a PM that is gone
+      assert.deepEqual(reads, [], 'its file is not asked for');
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('takes a reply to the question’s message as a free answer', async () => {
+    const { fake, delivered, book, messengers, asked } = await pmOffice('pm-reply.json');
+    try {
+      await messengers.tick();
+      fake.message('Both, iPhone first', { reply_to_message: { message_id: asked()[0]!.id! } });
+      await until(() => delivered.length === 1);
+      assert.deepEqual(delivered, ['Q1: Both, iPhone first']);
+      assert.equal((await book.read(PM)).asks[0]!.answer, 'Both, iPhone first');
+    } finally {
+      messengers.stop();
+    }
+  });
+
+  it('does not send a question again after a restart, and its button still answers it', async () => {
+    const { delivered, deps, messengers, asked, tap } = await pmOffice('pm-restart.json');
+    await messengers.tick();
+    messengers.stop();
+    // the old poll ends its last getUpdates, or it would take the tap
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const restarted = new Messengers(deps);
+    restarted.start();
+    try {
+      await restarted.tick();
+      assert.equal(asked().length, 1, 'not sent again');
+      tap('iPhone');
+      await until(() => delivered.length === 1);
+      assert.deepEqual(delivered, ['Q1: iPhone']);
+    } finally {
+      restarted.stop();
+    }
+  });
+
+  it('starts from a file whose kept questions are damaged, keeping the good ones', async () => {
+    const { deps, messengers, asked } = await pmOffice('pm-damaged.json');
+    await messengers.tick();
+    messengers.stop();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const file = path.join(base, 'pm-damaged.json');
+    const bots = JSON.parse(readFileSync(file, 'utf8'));
+    bots[0].pmAsks = [null, 7, { key: 3 }, ...bots[0].pmAsks];
+    writeFileSync(file, JSON.stringify(bots));
+    const restarted = new Messengers(deps);
+    restarted.start();
+    try {
+      await restarted.tick();
+      assert.equal(asked().length, 1, 'the good one is not sent again');
+    } finally {
+      restarted.stop();
     }
   });
 });

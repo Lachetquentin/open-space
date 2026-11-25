@@ -17,10 +17,10 @@ import type { Look } from './look.ts';
 import type { ModInfo, ModSettings } from './mods.ts';
 import type { MusicAction, MusicApp, MusicTrack, NowPlaying } from './music.ts';
 import type { TerminalChoice, TerminalKind } from './terminal.ts';
-import type { PmMessageTag, PmSettings } from './pm.ts';
+import type { PmAskAction, PmDetail, PmMemoryOp, PmMessageTag, PmSettings, PmSummary } from './pm.ts';
 import type { CostReport } from './usage.ts';
 
-export type { PmMessageTag, PmSettings } from './pm.ts';
+export type { PmAskAction, PmDetail, PmMemoryOp, PmMessageTag, PmSettings, PmSummary } from './pm.ts';
 
 /**
  * The longest text a message may carry (the server drops a longer one; the page refuses it first and keeps it in the
@@ -167,8 +167,8 @@ export interface SubagentInfo { id: string; name: string; type: string }
  */
 export interface BackgroundTask { id: string; description: string; kind?: 'shell' | 'monitor' }
 
-/** Why a session waits for the user. */
-export type AttentionKind = 'permission' | 'question' | 'finished' | 'error';
+/** Why a session waits for the user; `decision`: a PM with a question of its plan open (SessionInfo.pmSummary.asks). */
+export type AttentionKind = 'permission' | 'question' | 'decision' | 'finished' | 'error';
 
 /** What a folder would run of its own with a session: its hooks and MCP servers ("event : command", "name : command"), and whether it has a CLAUDE.md. */
 export interface FolderCode { hooks: string[]; mcpServers: string[]; settings: string[]; instructions: boolean }
@@ -314,6 +314,8 @@ export interface SessionInfo {
   pm?: true;
   /** a worker: the id of the PM that started or linked it (kept when that session is no PM any more, cleared once it is forgotten) */
   pmOf?: string;
+  /** a PM's counters for the list, while the setting is on: sent to the pages, never kept in sessions.json */
+  pmSummary?: PmSummary;
   /** the version of Claude Code its process runs (none without a process) */
   claudeVersion?: string;
   /** its conversation is being compacted: on its own (Claude Code near the limit, or Open Space after a pause) or asked with /compact */
@@ -750,6 +752,14 @@ export type ClientMessage =
   /** makes the session a project manager, or an ordinary session again (refused while the PM setting is off) */
   | { t: 'pmConvert'; sessionId: string }
   | { t: 'pmRevert'; sessionId: string }
+  /** the PMs this page shows (all of them at once, [] for none): it gets each one's pmDetail now and at every change */
+  | { t: 'pmWatch'; pms: string[] }
+  /** the user changes a PM's mission, instructions or a note of its memory; the PM is told */
+  | { t: 'pmEdit'; pm: string; mission?: string; instructions?: string; memory?: PmMemoryOp }
+  /** the user answers a PM's question (`answer`), snoozes it until `until` (epoch ms), wakes it, dismisses it or takes that back */
+  | { t: 'pmAsk'; pm: string; ask: number; action: PmAskAction; answer?: string; until?: number }
+  /** archives a finished or dropped task of a PM; `item` 0: all of them */
+  | { t: 'pmItemArchive'; pm: string; item: number }
   /** runs `claude update`; the answer comes as claudeUpdate */
   | { t: 'updateClaude' }
   /** runs `claude auth login` (it opens the browser) or `claude auth logout`; the answer comes as claudeAccount */
@@ -942,6 +952,8 @@ export type ServerMessage =
   | { t: 'modStore'; id: string; name: string; value: unknown }
   /** `refused: 'new'`: the refusal of this page's own request for a new session (create, duplicate, pmCreate, createMod), sent to it alone */
   | { t: 'toast'; kind: 'info' | 'error'; text: string; refused?: 'new' }
+  /** a PM this page watches (pmWatch), now and after each change; null: it is no PM any more, or the setting is off */
+  | { t: 'pmDetail'; pm: string; detail: PmDetail | null }
   /** a session's browser changed tabs or address; null once it is closed */
   | { t: 'browser'; sessionId: string; lane: number; browser: BrowserState | null };
 

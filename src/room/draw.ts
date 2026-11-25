@@ -355,7 +355,7 @@ function characterPose(character: Character, options: FrameOptions, standing = f
   if (character.phase === 'carried') return { ...poseOf(character, false, false, 'none', options), posture: 'walk', step: !options.reducedMotion && Math.floor(options.time / 90) % 2 === 1 ? 1 : 0 };
   const { status } = character.person;
   const seated = character.phase === 'seated';
-  const gesture: Gesture = !seated || options.dozing ? 'none' : status === 'working' ? 'typing' : status === 'permission' || status === 'question' ? 'raising' : 'none';
+  const gesture: Gesture = !seated || options.dozing ? 'none' : status === 'working' ? 'typing' : asks(status) ? 'raising' : 'none';
   const pose = poseOf(character, seated, status === 'finished', gesture, options);
   // no seat at all where they work: an automaton stands in its capsule (still at work, its step going)
   if (seated && standing) return { ...pose, posture: 'stand' };
@@ -466,7 +466,7 @@ const TAG_LIFT = 5;
 const SEPARATED = TAG_GAP * 2 + 1;
 
 
-const asks = (status: Status) => status === 'permission' || status === 'question';
+const asks = (status: Status) => status === 'permission' || status === 'question' || status === 'decision';
 const textWidthOf = (context: Context, text: string) => Math.ceil(context.measureText(text).width);
 const extraAgents = (tag: NameTag) => Math.max(0, tag.agents.length - SHOWN_AGENTS);
 

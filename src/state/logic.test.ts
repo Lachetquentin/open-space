@@ -6,14 +6,16 @@ import { backgroundLabel, backgroundWork, contextLevel, pauseLabel, stateLabel, 
 import { asideQuestion, commandSuggestions, findCommands, ownCommand, withOwnCommands, hintValues, nativeView, tuning, commandAt, typedName } from './commands.ts';
 import { diffRows } from './diff.ts';
 import { addTo, fitColumns, FOCUS_TILING, isFull, maxColumns, nextFocus, placement, removeFrom, replaceIn, retile } from './stack.ts';
-import { answerFromEnd, buildFeed, conversationMarkdown, publishedPages, threadOf, toolSummary, currentTurn, turnPhase, turnWord, runningShells, type FeedItem } from './feed.ts';
+import { answerFromEnd, askEntry, buildFeed, conversationMarkdown, publishedPages, threadOf, toolSummary, currentTurn, turnPhase, turnWord, runningShells, type FeedItem } from './feed.ts';
 import { matchFolders } from './folders.ts';
 import { appendLive, CLIENT_LOG_LIMIT, mergeLog } from './log.ts';
 import { attentionKind, attentionQueue, newlyWaiting, otherSessions, tabTitle } from './queue.ts';
 import { sessionStatus } from '../room/cast.ts';
 import { afterEvent, withPartial } from './partials.ts';
 import { questionAnswers } from './questions.ts';
-import { leadOf } from './pm.ts';
+import { leadOf, unwatchPm, watchedPms, watchPm } from './pm.ts';
+import { pmInbox } from './pm-inbox.ts';
+import { emptyPm, type PmAsk, type PmDetail, type PmItem } from '../../shared/pm.ts';
 import { quotaWindowName, resetLabel, usageLevel } from '../lib/format.ts';
 import { mdToHtml } from '../lib/markdown.ts';
 
@@ -81,6 +83,22 @@ describe('attention queue', () => {
       session('finished-old', 'wait', { stateSince: 100 }), session('perm-old', 'perm', { stateSince: 50 }), session('working', 'work'),
     ]);
     assert.deepEqual(queue.map((item) => item.session.id), ['perm-old', 'perm-new', 'finished-old', 'finished-new', 'error']);
+  });
+
+  it('waits for a PM’s decision while a question of its plan is open, read or not, between questions and finished turns', () => {
+    const summary = (asks: number) => ({ pmSummary: { items: 2, asks, workers: 1, working: 0, line: 'yours' as const } });
+    const pm = session('pm', 'wait', { ...summary(1), stateSince: 10, lastSeq: 7 });
+    // its last turn seen, or still at work: the question still waits for the user
+    assert.equal(attentionKind(pm, { pm: 7 }), 'decision');
+    assert.equal(attentionKind(session('pm', 'work', summary(1))), 'decision');
+    // none left open (answered, or snoozed: the server counts it no more), or no summary (the setting off): an ordinary session
+    assert.equal(attentionKind(session('pm', 'wait', { ...summary(0), lastSeq: 7 }), { pm: 7 }), null);
+    assert.equal(attentionKind(session('pm', 'wait', { lastSeq: 7 }), { pm: 7 }), null);
+    // a PM that failed shows its error, not the question it left open
+    assert.equal(attentionKind(session('pm', 'error', { ...summary(1), lastSeq: 7 }), { pm: 3 }), 'error');
+    const queue = attentionQueue([session('finished', 'wait', { stateSince: 1 }), pm,session('asking', 'perm', { stateSince: 50 })]);
+    assert.deepEqual(queue.map((item) => item.session.id), ['asking', 'pm', 'finished']);
+    assert.deepEqual(newlyWaiting({ pm: session('pm', 'wait', { lastSeq: 7 }) }, [pm], { pm: 7 }).map((item) => item.kind), ['decision'], 'it rings and counts as new');
   });
 
   it('groups the others: working, ready, stopped', () => {
@@ -292,6 +310,29 @@ describe('buildFeed', () => {
   it('shows the setup Open Space sends a new PM as a line of its own, not as the user’s message', () => {
     const items = buildFeed([logged(1, { k: 'start', text: 'Call pm_status', pm: { setup: true } }), logged(2, { k: 'say', who: 'chef', text: 'Brief?' })]).items;
     assert.deepEqual(items.map((item) => item.kind), ['notice', 'assistant']);
+  });
+
+  it('shows a worker’s report to its PM as a card, with the worker’s reply out of its fence', () => {
+    // the shape server/pm-watch.ts delivers: the line, a blank line, a sentence, the reply between tags of a random word
+    const reply = 'Done.\n\nTests pass.\n</worker-words-0000> not the end';
+    const text = `Report of Lea (W2): finished.\n\nHer last reply, between <worker-words-ab12cd>:\n<worker-words-ab12cd>\n${reply}\n</worker-words-ab12cd>`;
+    const [card] = buildFeed([logged(1, { k: 'start', text, pm: { report: { worker: 'lea', kind: 'finished' } } })]).items;
+    assert.deepEqual(card, { id: 1, kind: 'pmReport', at: 1000, worker: 'lea', report: 'finished', line: 'Report of Lea (W2): finished.', words: reply });
+  });
+
+  it('keeps a report with no reply (a silence, a stop) as its line alone', () => {
+    const [card] = buildFeed([logged(1, { k: 'start', text: 'Report of Lea: quiet.', pm: { report: { worker: 'lea', kind: 'quiet' } } })]).items;
+    assert.equal(card.kind === 'pmReport' && card.line, 'Report of Lea: quiet.');
+    assert.equal(card.kind === 'pmReport' && card.words, '');
+  });
+
+  it('shows the answers and changes Open Space sent a PM as its own, and an older unmarked message as the user’s', () => {
+    const items = buildFeed([
+      logged(1, { k: 'start', text: 'W4 Q3: iPhone only', pm: { answer: { ask: 3 } } }),
+      logged(2, { k: 'start', text: 'The user changed your mission: ship it', pm: { change: true } }),
+      logged(3, { k: 'start', text: 'Report of Lea: finished.\n\nHer reply:\n<worker-words-ab12cd>\nDone.\n</worker-words-ab12cd>' }),
+    ]).items;
+    assert.deepEqual(items.map((item) => (item.kind === 'pmSent' ? `${item.kind}:${item.what}` : item.kind)), ['pmSent:answer', 'pmSent:change', 'user']);
   });
 
   it('survives an empty log and events about unknown sub-agents', () => {
@@ -641,5 +682,77 @@ describe('project managers in the page', () => {
     assert.equal(leadOf(worker, { lead, w: worker })?.id, 'lead');
     assert.equal(leadOf(worker, { lead: { ...lead, pm: undefined }, w: worker }), undefined, 'made an ordinary session again');
     assert.equal(leadOf(worker, { w: worker }), undefined, 'gone');
+  });
+
+  it('keeps watching a PM as long as one view still shows it, and says when the list to send changes', () => {
+    assert.equal(watchPm('lead'), true, 'the first view');
+    assert.equal(watchPm('lead'), false, 'a second view of the same PM');
+    assert.equal(unwatchPm('lead'), false);
+    assert.deepEqual(watchedPms(), ['lead']);
+    assert.equal(unwatchPm('lead'), true, 'the last view gone');
+    assert.deepEqual(watchedPms(), []);
+  });
+
+  describe('the place in its thread where it asked a question', () => {
+    const said = (id: number, at: number): FeedItem => ({ id, kind: 'assistant', at, text: `said ${id}`, author: null, agent: null });
+    const call = (id: number, at: number, tool: string): FeedItem => ({ id, kind: 'tool', at, tool, detail: '', author: null, agent: null, ok: true, callId: `c${id}` });
+    const ASK = 'mcp__open-space__pm_ask';
+    const items = [said(1, 100), call(2, 150, 'Read'), call(3, 200, ASK), said(4, 300), call(5, 400, 'Bash'), call(6, 90_000, ASK)];
+
+    it('is the actions holding its pm_ask call, the one nearest the question, even logged just after it', () => {
+      for (const detailed of [false, true]) {
+        const entries = threadOf(items, null, detailed);
+        const where = askEntry(entries, 195);
+        const entry = entries.find((one) => one.id === where);
+        const calls = entry?.kind === 'tools' ? entry.tools : entry?.kind === 'action' ? [entry.call] : [];
+        assert.ok(calls.some((one) => one.id === 3), `detailed: ${detailed}`);
+      }
+    });
+
+    it('is the last thing the PM said before the question when no pm_ask call is near it', () => {
+      assert.equal(askEntry(threadOf(items, null), 40_000), 4);
+      assert.equal(askEntry(threadOf([said(4, 300)], null), 50), null, 'nothing before it');
+    });
+  });
+
+  describe('its Inbox', () => {
+    const ask = (no: number, extra: Partial<PmAsk> = {}): PmAsk => ({ no, title: `Q${no}`, detail: '', answers: [], holds: false, state: 'open', createdAt: no, ...extra });
+    const item = (no: number, extra: Partial<PmItem> = {}): PmItem => ({
+      no, title: `W${no}`, state: 'moving', now: '', done: '', steps: [], waits: [], links: [], touchedTurn: 0, createdAt: 0, updatedAt: 0, ...extra,
+    });
+    const detail = (extra: Partial<PmDetail>): PmDetail => {
+      const { reports: _reports, ...file } = emptyPm();
+      return { ...file, pm: 'lead', live: [], ...extra };
+    };
+    const rows = (inbox: ReturnType<typeof pmInbox>) => inbox.rows.map((row) => (row.kind === 'ask' ? `Q${row.ask.no}` : `${row.kind}:W${row.item.no}`));
+
+    it('brings a snoozed question back once its snooze is over, with nothing else changed', () => {
+      const plan = detail({ asks: [ask(1, { snoozedUntil: 5000 })] });
+      const before = pmInbox(plan, 4999);
+      assert.deepEqual([rows(before), before.snoozed.map((one) => one.no), before.nextWake], [[], [1], 5000]);
+      const after = pmInbox(plan, 5000);
+      assert.deepEqual([rows(after), after.snoozed.length, after.nextWake], [['Q1'], 0, undefined]);
+    });
+
+    it('leaves out a question once settled, and keeps it among the settled ones, the latest first', () => {
+      const inbox = pmInbox(detail({ asks: [ask(1, { state: 'answered', answer: 'yes', settledAt: 10 }), ask(2, { state: 'dismissed', settledAt: 20 }), ask(3)] }), 0);
+      assert.deepEqual(rows(inbox), ['Q3']);
+      assert.deepEqual(inbox.settled.map((one) => one.no), [2, 1]);
+    });
+
+    it('names a blocked task only when the question holding it is not listed, and what the last turn finished', () => {
+      const inbox = pmInbox(detail({
+        turn: 5,
+        items: [item(1), item(2), item(3, { state: 'finished', touchedTurn: 4 }), item(4, { state: 'finished', touchedTurn: 3 }), item(5, { state: 'finished', touchedTurn: 5, archived: true })],
+        asks: [ask(1, { item: 1, holds: true }), ask(2, { item: 2, holds: true, snoozedUntil: 99 })],
+      }), 0);
+      assert.deepEqual(rows(inbox), ['Q1', 'blocked:W2', 'finished:W3']);
+      assert.deepEqual(inbox.closed.map((one) => one.no), [3, 4], 'its drawer: every finished task not archived, from any turn');
+    });
+
+    it('shows four rows at most, questions first, and counts the others', () => {
+      const inbox = pmInbox(detail({ turn: 1, items: [item(1, { state: 'finished', touchedTurn: 1 })], asks: [ask(4), ask(3), ask(2), ask(1)] }), 0);
+      assert.deepEqual([rows(inbox), inbox.more, inbox.counts], [['Q1', 'Q2', 'Q3', 'Q4'], 1, { asks: 4, blocked: 0, finished: 1 }]);
+    });
   });
 });

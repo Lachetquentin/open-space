@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { answerMessage, emptyPm, itemStatus, PM_LIMITS, type PmAsk, type PmFile, type PmItem, type PmWorker, parsePmFile, parseTag, type ShownStatus, type WorkerLive } from './pm.ts';
+import {
+  answerMessage, asksShown, emptyPm, fromOpenSpace, itemStatus, PM_LIMITS, type PmAsk, type PmFile, type PmItem, type PmLine, type PmWorker, parsePmFile, parsePmTag, parseTag,
+  pmSummary, type ShownStatus, typedAnswer, type WorkerLive,
+} from './pm.ts';
 
 const item = (no: number, more: Partial<PmItem> = {}): PmItem => ({
   no, title: `Task ${no}`, state: 'moving', now: '', done: '', steps: [], waits: [], links: [], touchedTurn: 0, createdAt: 1, updatedAt: 1, ...more,
@@ -185,5 +188,71 @@ describe('W and Q tags', () => {
   it('puts the question, and its task when it has one, before the answer', () => {
     assert.equal(answerMessage(ask(3, { item: 4 }), 'iPhone only'), 'W4 Q3: iPhone only');
     assert.equal(answerMessage(ask(3), 'iPhone only'), 'Q3: iPhone only');
+  });
+});
+
+describe('the questions shown to the user', () => {
+  it('puts a question snoozed until later aside, and back with the open ones once its time is past', () => {
+    const file = pm({ asks: [ask(1), ask(2, { snoozedUntil: 500 }), ask(3, { snoozedUntil: 100 }), ask(4, { state: 'answered' }), ask(5, { state: 'dismissed' })] });
+    const shown = asksShown(file, 200);
+    assert.deepEqual(shown.open.map((one) => one.no), [1, 3]);
+    assert.deepEqual(shown.snoozed.map((one) => one.no), [2]);
+    assert.deepEqual(shown.settled.map((one) => one.no), [4, 5]);
+  });
+});
+
+describe('the summary of a PM in the list', () => {
+  const live = (session: string, state: 'working' | 'waiting' | 'idle'): WorkerLive => ({ session, working: state === 'working', waiting: state === 'waiting' });
+
+  it('counts the open tasks, the questions waiting for the user, the workers still on the job and those at work', () => {
+    const file = pm({
+      items: [item(1), item(2, { state: 'later' }), item(3, { state: 'finished' }), item(4, { state: 'dropped' }), item(5, { state: 'moving', archived: true })],
+      asks: [ask(1), ask(2, { snoozedUntil: 500 }), ask(3, { state: 'answered' })],
+      workers: [worker('a'), worker('b'), worker('c', { resolvedAt: 5 })],
+    });
+    const summary = pmSummary(file, [live('a', 'working'), live('b', 'idle'), live('c', 'working'), live('x', 'working')], 200);
+    const { items, asks, workers, working } = summary;
+    assert.deepEqual({ items, asks, workers, working }, { items: 2, asks: 1, workers: 2, working: 1 });
+  });
+
+  const lines: { name: string; file: Partial<PmFile>; live?: WorkerLive[]; expected: PmLine }[] = [
+    { name: 'a task held by an open question, even with a worker waiting', file: { items: [item(1)], asks: [ask(1, { item: 1, holds: true })], workers: [worker('w', { item: 1 })] }, live: [live('w', 'waiting')], expected: 'blocked' },
+    { name: 'a question for the user', file: { asks: [ask(1)], workers: [worker('w')] }, live: [live('w', 'working')], expected: 'yours' },
+    { name: 'a worker waiting for the user', file: { workers: [worker('w'), worker('v')] }, live: [live('w', 'waiting'), live('v', 'working')], expected: 'yours' },
+    { name: 'a worker at work', file: { workers: [worker('w')] }, live: [live('w', 'working')], expected: 'working' },
+    { name: 'a question snoozed, workers idle', file: { asks: [ask(1, { snoozedUntil: 500 })], workers: [worker('w')] }, live: [live('w', 'idle')], expected: 'calm' },
+    { name: 'a resolved worker waiting', file: { workers: [worker('w', { resolvedAt: 5 })] }, live: [live('w', 'waiting')], expected: 'calm' },
+  ];
+  for (const { name, file, live: workers, expected } of lines) {
+    it(`reads ${expected}: ${name}`, () => assert.equal(pmSummary(pm(file), workers ?? [], 200).line, expected));
+  }
+
+  it('wakes at the end of the nearest snooze still ahead, and not for one past', () => {
+    const file = pm({ asks: [ask(1, { snoozedUntil: 900 }), ask(2, { snoozedUntil: 400 }), ask(3, { snoozedUntil: 100 }), ask(4, { snoozedUntil: 300, state: 'dismissed' })] });
+    assert.equal(pmSummary(file, [], 200).nextWake, 400);
+    assert.equal(pmSummary(file, [], 1000).nextWake, undefined);
+  });
+});
+
+describe('an answer typed to a PM', () => {
+  const file = pm({ asks: [ask(3, { item: 4 }), ask(5), ask(6, { state: 'answered' })] });
+
+  it('answers the open question its tag names, with what follows the colon', () => {
+    assert.deepEqual(typedAnswer(file, 'W4 Q3: iPhone only'), { ask: 3, answer: 'iPhone only' });
+    assert.deepEqual(typedAnswer(file, 'q3 : both'), { ask: 3, answer: 'both' }, 'the task left out');
+    assert.deepEqual(typedAnswer(file, 'Q5: yes\nand more'), { ask: 5, answer: 'yes\nand more' });
+  });
+
+  it('leaves any other message alone', () => {
+    for (const text of ['W5 Q3: on another task', 'Q6: already answered', 'Q9: no such question', 'W4: a task', 'Q3:', 'Q3 iPhone', 'About Q3: later']) {
+      assert.equal(typedAnswer(file, text), null, text);
+    }
+  });
+});
+
+describe('the tag of a message to a PM', () => {
+  it('reads back a change of the user, which Open Space writes', () => {
+    assert.deepEqual(parsePmTag(JSON.parse(JSON.stringify({ change: true }))), { change: true });
+    assert.equal(fromOpenSpace({ change: true }), true);
   });
 });

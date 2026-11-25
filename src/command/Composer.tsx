@@ -15,6 +15,7 @@ import { BackgroundTasks } from './BackgroundTasks.tsx';
 import { CommandField, useMentionable } from './CommandField.tsx';
 import { AlertIcon, CloseIcon, CommandIcon, FileIcon, ImageIcon, PauseIcon, PencilIcon, PhoneIcon } from './Icons.tsx';
 import { PendingStrip } from './PendingStrip.tsx';
+import { PmInbox } from './PmInbox.tsx';
 import { runOwnCommand } from './ownCommands.ts';
 import { TuneMenu } from './TuneMenu.tsx';
 import type { Attachments } from './useAttachments.ts';
@@ -150,6 +151,7 @@ export function Composer({ session, attachments }: { session: SessionInfo; attac
           </ol>
         </section>
       )}
+      <PmInbox session={session} />
       <PendingStrip session={session} />
       {paused && <PauseBanner session={session} until={session.pausedUntil!} />}
       <CompactHint session={session} />
