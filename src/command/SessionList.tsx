@@ -5,6 +5,8 @@
 // Alt+its digit, App.tsx) opens a new session in its folder, its other button a new project manager there (PM, while the
 // setting is on). A PM wears a badge, says how its plan is going and has its workers under it (they fold away, remembered
 // per PM, except those waiting for the user); its mission shows beside it under the pointer. A worker shown elsewhere names its PM.
+// When the session in front is a PM, its plan comes after the groups (PmProject.tsx), as in the office's status panel;
+// folded down to the faces, the list leaves it out.
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent } from 'react';
 import { t } from '../i18n/index.ts';
 import { formatAge, formatAgo } from '../lib/format.ts';
@@ -25,6 +27,7 @@ import { PmBadge } from '../design/PmBadge.tsx';
 import { leadOf } from '../state/pm.ts';
 import { usePmDetail } from '../state/usePmDetail.ts';
 import { BranchMark } from './BranchCard.tsx';
+import { PmProject, useLeadInFront } from './PmProject.tsx';
 import { CheckIcon, ChevronDownIcon, FilterIcon, FoldListIcon, PlusIcon, PmIcon, UnfoldListIcon } from './Icons.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { useMenuBelow } from './useMenuBelow.ts';
@@ -72,6 +75,8 @@ export function SessionList() {
     writePreference('listNarrow', !narrow);
     setNarrow(!narrow);
   };
+  // the PM in front: its plan after the groups, folded with them (a key no state nor `project:<folder>` takes)
+  const lead = useLeadInFront();
   const { project } = useProjects();
   const [grouping, setGrouping] = useState<ListGrouping>(() => {
     const stored = readPreference<string>('listGrouping', 'state');
@@ -197,6 +202,7 @@ export function SessionList() {
           </section>
         ))}
         {groups.length === 0 && !narrow && <p className="cp-list__empty">{words.empty}</p>}
+        {lead && !narrow && <PmProject key={lead.id} pm={lead} folded={folded.includes('pm')} onFold={() => fold('pm')} />}
       </div>
       {peek && peeked && <Peek session={peeked} seen={seen} now={now} x={peek.x} y={peek.y} />}
       <button

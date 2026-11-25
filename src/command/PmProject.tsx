@@ -1,5 +1,5 @@
-// The « Projet » section of the status panel, for the session in front when it acts as a project manager (PM): its
-// mission and instructions (the pencil changes them, the PM is told), its tasks by the status shown (src/state/pm-project.ts),
+// The « Projet » section of the status panel (under the session list in Focus), for the session in front when it acts
+// as a project manager (PM): its mission and instructions (the pencil changes them, the PM is told), its tasks by the status shown (src/state/pm-project.ts),
 // each opened in place (what it is doing now, its steps, links and questions), its workers (a click opens one) and its
 // memory. Each section's fold is remembered per PM in this browser; « Tout archiver » takes the finished tasks away.
 import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
@@ -170,7 +170,11 @@ function Memory({ pm, notes }: { pm: string; notes: PmDetail['memory'] }) {
   );
 }
 
-/** The PM's plan in the status panel, folded with the panel's other groups (`folded`, `onFold`). */
+/** The session in front, while it acts as a PM (the server sends its summary only then): the one whose plan shows. */
+export const useLeadInFront = (): SessionInfo | undefined =>
+  useSessions((s) => (s.selectedId && s.sessions[s.selectedId]?.pmSummary ? s.sessions[s.selectedId] : undefined));
+
+/** The PM's plan in the status panel or under Focus's list, folded with their other groups (`folded`, `onFold`). */
 export function PmProject({ pm, folded, onFold }: { pm: SessionInfo; folded: boolean; onFold: () => void }) {
   const words = t.pm.project;
   const detail = usePmDetail(pm.id);

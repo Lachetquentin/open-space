@@ -24,7 +24,7 @@ import { AutomatonIcon, BranchIcon, ChevronDownIcon, ChevronUpIcon, CompactIcon,
 import type { SessionInfo } from '../../shared/protocol.ts';
 import { BranchMark } from './BranchCard.tsx';
 import { Marquee } from './Marquee.tsx';
-import { PmProject } from './PmProject.tsx';
+import { PmProject, useLeadInFront } from './PmProject.tsx';
 import { TagChips } from './TagChips.tsx';
 
 const FOLDED_KEY = 'poste:status-folded';
@@ -118,8 +118,7 @@ export function StatusPanel() {
   const show = useSessions((s) => s.show);
   const openIds = useSessions((s) => s.openIds);
   const openNewSession = useSessions((s) => s.openNewSession);
-  // the session in front, while it acts as a PM (the server sends its summary only then)
-  const lead = useSessions((s) => (s.selectedId && s.sessions[s.selectedId]?.pmSummary ? s.sessions[s.selectedId] : undefined));
+  const lead = useLeadInFront();
   // pulled by its top right corner: wider, and taller for its list (a double click gives it back its own size)
   const [size, setSize] = useState(() => readPreference<{ width: number; height: number } | null>('statusSize', null));
   const resize = (event: ReactPointerEvent<HTMLElement>) => {
