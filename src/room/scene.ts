@@ -27,6 +27,8 @@ export type Phase = 'entering' | 'seated' | 'leaving' | 'carried' | 'reporting';
 
 /** How long a worker stands at its project manager's desk to report, in ms. */
 const REPORT_MS = 2000;
+/** A worker only reports with nothing left to ask or do: no request, no question, not compacting. */
+const canReport = (status: Person['status']) => status === null || status === 'finished';
 
 /** How far below the pointer the feet of someone carried hang, in canvas pixels: the pointer holds them by the chest. */
 const CARRY_HANG = 22;
@@ -144,7 +146,7 @@ export class Scene {
       if ((person.turns ?? 0) > (character.person.turns ?? 0)) character.turnEnded = true;
       if (character.turnEnded && person.status !== 'working') {
         character.turnEnded = false;
-        if (character.phase === 'seated') finished.push(character);
+        if (character.phase === 'seated' && canReport(person.status)) finished.push(character);
       }
       character.person = person;
       if (character.phase === 'carried') continue;
@@ -152,7 +154,7 @@ export class Scene {
         character.seat = seat;
         character.path = this.floor.pathToSeat(character.position, seat);
         character.phase = 'entering';
-      } else if (character.phase === 'reporting' && person.status !== null && person.status !== 'finished') this.backToSeat(character);
+      } else if (character.phase === 'reporting' && !canReport(person.status)) this.backToSeat(character);
     }
     const planned = new Set(plan.people.map((person) => person.id));
     for (const character of this.characters.values()) {
@@ -178,9 +180,11 @@ export class Scene {
     const others = [...this.characters.values()].filter((other) => other.phase === 'reporting').map((other) => other.path.at(-1) ?? other.position);
     const spot = this.floor.standingBeside(lead.seat, worker.position, others);
     if (!spot) return;
+    const path = this.floor.route(worker.position, spot);
+    if (path.length === 0) return;
     worker.phase = 'reporting';
     worker.report = { lead: lead.person.id, left: REPORT_MS };
-    worker.path = this.floor.route(worker.position, spot);
+    worker.path = path;
   }
 
   /** True once a reporting worker is done: it stood there long enough, or its project manager is no longer at its desk. */

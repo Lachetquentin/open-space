@@ -314,6 +314,21 @@ describe('a worker reporting to its PM', () => {
     }
   });
 
+  const request = { requestId: 'r', who: 'chef', tool: 'Bash', detail: 'ls', canAlways: false };
+
+  it('stays at its desk when its turn ends on a permission request', () => {
+    const scene = officeWith([lead(), atWork], [lead(), worker(2, { state: 'perm', permissions: [request] })]);
+    assert.equal(scene.characters.get('w')!.phase, 'seated');
+  });
+
+  it('heads back to its desk at once when a request comes in while it walks', () => {
+    const scene = officeWith([lead(), atWork], [lead(), worker(2)]);
+    const w = scene.characters.get('w')!;
+    assert.equal(w.phase, 'reporting');
+    scene.sync(planOffice([lead(), worker(2, { state: 'perm', permissions: [request] })], {}, scene.seats()), false);
+    assert.equal(w.phase, 'entering');
+  });
+
   it('walks once the sub-agents its turn left at work are done (its session open, the turn seen)', () => {
     const seen = { w: 2 };
     const scene = officeScene();
