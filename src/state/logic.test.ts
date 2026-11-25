@@ -352,6 +352,25 @@ describe('buildFeed', () => {
     assert.deepEqual(seen.kind === 'pmSent' && [seen.what, seen.page], ['pageSeen', 'a1b2c3d4e5f6']);
   });
 
+  it('reads the live page from pm_page_show\'s JSON, the questions set aside after it, and nothing from a result it cannot read', () => {
+    const cardOf = (lines: string[]) => {
+      const items = buildFeed([
+        logged(1, { k: 'act', who: 'chef', id: 'c1', tool: 'mcp__open-space__pm_page_show', detail: '' }),
+        logged(2, { k: 'act_done', who: 'chef', id: 'c1', ok: true, output: { lines, total: lines.length } }),
+      ]).items;
+      const card = items.find((item) => item.kind === 'pmPage');
+      return card?.kind === 'pmPage' ? card.page : null;
+    };
+    const cases: [string, string[], string | null][] = [
+      ['followed by the questions set aside', ['{', '  "page": "a1b2c3d4e5f6"', '}', 'The user set aside Q2.'], 'a1b2c3d4e5f6'],
+      ['not JSON', ['Shown: a1b2c3d4e5f6'], null],
+      ['JSON cut short', ['{', '  "page": "a1b2c3d4e5f6"'], null],
+      ['a page that is not a text', ['{', '  "page": 12', '}'], null],
+      ['an id out of the pattern', ['{', '  "page": "../a1"', '}'], null],
+    ];
+    for (const [what, lines, page] of cases) assert.equal(cardOf(lines), page, what);
+  });
+
   it('survives an empty log and events about unknown sub-agents', () => {
     assert.deepEqual(buildFeed([]), { items: [], plan: [] });
     assert.doesNotThrow(() => buildFeed([logged(1, { k: 'report', who: 'ghost', text: 'x' }), logged(2, { k: 'act_done', who: 'chef', id: 'nope', ok: true })]));

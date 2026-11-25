@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 import type { ModInfo } from '../shared/mods.ts';
-import { PM_LIMITS, PM_TOOL_NAMES, PM_TOOL_USAGE } from '../shared/pm.ts';
+import { PAGE_ID, PM_LIMITS, PM_TOOL_NAMES, PM_TOOL_USAGE } from '../shared/pm.ts';
 import type { Preferences, SessionInfo } from '../shared/protocol.ts';
 import { parseTriggerInput, type Trigger } from '../shared/triggers.ts';
 import { ExternalKey, handleMcp, MCP_SETTINGS, openSpaceMcpConfig, sessionMcpKey, TOOLS, toolsFor, type Caller, type OpenSpaceApi } from './mcp.ts';
@@ -584,6 +584,18 @@ describe('the pm_* tools of the open-space MCP server', () => {
     }
     assert.deepEqual(readdirSync(dir), [], 'nothing written');
     assert.deepEqual(done, []);
+  });
+
+  it('gives back the page shown as `{ page }` JSON in a block of its own, the questions set aside after it (what the feed reads)', async () => {
+    const { api, book } = pmFake();
+    await json(api, 'pm_ask', { title: 'Which phone?', detail: 'iPhone, Android or both' });
+    await book.change('s1', (file) => { file.asks[0].state = 'dismissed'; });
+    const content = (await blocks(api, 'pm_page_show', { html: '<p>Hi</p>', title: 'Hi', source: 'hi' })).content as { text: string }[];
+    const shown = JSON.parse(content[0].text);
+    assert.deepEqual(Object.keys(shown), ['page']);
+    assert.match(shown.page, PAGE_ID);
+    assert.deepEqual((await book.read('s1')).pages.map((one) => one.id), [shown.page]);
+    assert.equal(content.length, 2, 'the questions set aside come after it');
   });
 
   it('keeps a page\'s HTML only while the page is in the plan', async () => {
