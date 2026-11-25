@@ -20,7 +20,6 @@ import { ActionMenu } from './ModWindows.tsx';
 import { WindowCompactContext } from './useWindowDrag.ts';
 import { usePhone } from '../lib/phone.ts';
 
-
 export function PmInbox({ session }: { session: SessionInfo }) {
   const detail = usePmDetail(session.pmSummary ? session.id : null);
   // folded from the start in a small window or on a phone, where the thread needs the room
