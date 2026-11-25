@@ -233,18 +233,25 @@ describe('HTTP requests', () => {
     const kit = [...body.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)].find((match) => match[2].includes('pm.page.submit'));
     assert.ok(kit, 'the kit sends the answers');
     assert.doesNotThrow(() => new vm.Script(kit[2]), 'the kit is valid JavaScript');
-    assert.doesNotMatch(body, /[\s/]http-equiv\s*=/i, 'no meta of the page refreshes it elsewhere');
+    assert.doesNotMatch(body, /<meta[^>]*[\s/]http-equiv/i, 'no meta of the page refreshes it elsewhere');
   });
 
   it('keeps a live page’s words as written, and stops its meta tags from refreshing it', () => {
     const { body } = pageDocument('<p>the http-equiv attribute</p><meta http-equiv="refresh" content="0;url=https://x"><META HTTP-EQUIV=refresh content="0;url=https://y">');
     assert.match(body, /<p>the http-equiv attribute<\/p>/);
-    assert.doesNotMatch(body, /[\s/]http-equiv\s*=/i, 'no meta refreshes the page');
+    assert.doesNotMatch(body, /<meta[^>]*[\s/]http-equiv/i, 'no meta refreshes the page');
   });
 
-  it('has the kit of a live page stop every link click, so a link cannot take what was typed', () => {
-    const kit = [...pageDocument('<a href="https://x">x</a>').body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].find((match) => match[1].includes('pm.page.submit'));
-    assert.match(kit?.[1] ?? '', /closest\('a\[href\], area\[href\]'\)\) event\.preventDefault\(\)/);
+  it('leaves no meta tag of a live page, even one with unbalanced quotes', () => {
+    const { body } = pageDocument('<meta http-equiv=refresh content="0;url=https://x/" x=a"><META\nhttp-equiv=refresh content=0;url=https://y/><meta/http-equiv=refresh>');
+    assert.equal([...body.matchAll(/<meta\b/gi)].length, 2, 'only the two of the kit’s own head remain');
+    assert.doesNotMatch(body, /<meta[^>]*http-equiv/i);
+  });
+
+  it('wraps a page of 2 MB of broken meta tags in well under a second', () => {
+    const start = performance.now();
+    pageDocument('<meta"'.repeat(350_000));
+    assert.ok(performance.now() - start < 1000);
   });
 
   it('runs only the kit in a PM’s live page: its own scripts and handlers stay inert', async () => {

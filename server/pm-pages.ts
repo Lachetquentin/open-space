@@ -175,7 +175,7 @@ const KIT_SCRIPT = `(function () {
   }
   document.addEventListener('click', function (event) {
     var target = event.target instanceof Element ? event.target : null;
-    if (target && target.closest('a[href], area[href]')) event.preventDefault();
+    if (target && target.closest('a, area')) event.preventDefault();
     var choice = target && target.closest(CHOICE);
     if (choice) {
       event.preventDefault();
@@ -222,13 +222,12 @@ const scriptValue = (value: string): string => JSON.stringify(value).replace(/</
  * What is served for a page, made again for each response: its policy, with a new nonce, and its document. The kit first,
  * closed before any of the page (so that nothing the PM wrote can take its nonce, and the page's own styles come after),
  * then the page as the PM wrote it, a fragment or a whole document (its doctype dropped: the browser merges its <html>,
- * <head> and <body> into the ones the kit opened). Its <script> tags stay, inert. Its <meta> tags have their http-equiv
- * attribute renamed so that none refreshes the page to an address elsewhere: an attribute's name takes no character
- * reference, so this literal match finds them all (the same word in the page's text stays as written).
+ * <head> and <body> into the ones the kit opened). Its <script> tags stay, inert. Its <meta> start tags are renamed so that none refreshes the page to an address
+ * elsewhere: this match is linear and finds each of them whatever its quotes (the word http-equiv in the page's text stays as written).
  */
 export function pageDocument(html: string): { csp: string; body: string } {
   const nonce = randomBytes(18).toString('base64');
   const kit = `<style>${KIT_STYLE}</style><script nonce="${nonce}">var SEND = ${scriptValue(st.pm.pageSend)};\n${KIT_SCRIPT}</script>`;
-  const page = html.replace(/^﻿?\s*<!doctype[^>]*>/i, '').replace(/<meta\b(?:"[^"]*"|'[^']*'|[^>"'])*>/gi, (meta) => meta.replace(/http-equiv/gi, 'data-http-equiv'));
+  const page = html.replace(/^﻿?\s*<!doctype[^>]*>/i, '').replace(/<meta(?=[\s/>])/gi, '<x-meta');
   return { csp: pageCsp(nonce), body: `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${kit}${page}` };
 }
