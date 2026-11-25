@@ -95,19 +95,34 @@ function PageWindow({ pm, asked }: { pm: string; asked: string }) {
   const ready = useRef(false);
   const grace = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [silent, setSilent] = useState(false);
-  // one answer at a time: a double click, a second Send, wait for the plan to say the page answered
+  // one answer at a time: a double click, a second Send, wait for the plan to say the page answered. The ref is what
+  // guards (two messages can come before the next render); the state shows it. The kit holds its own Send until told.
   const [sent, setSent] = useState(false);
+  const sentRef = useRef(false);
+  const unsend = () => {
+    sentRef.current = false;
+    setSent(false);
+    frame.current?.contentWindow?.postMessage({ openSpace: 'unsent' }, '*');
+  };
   // a new page shown, or its state changed: it may send again
-  useEffect(() => { setSent(false); }, [shownId, shown?.state]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unsend reads refs and a state setter only
+  useEffect(() => { unsend(); }, [shownId, shown?.state]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unsend reads refs and a state setter only
   useEffect(() => {
     if (!sent) return;
-    const timer = setTimeout(() => setSent(false), ANSWER_RETRY_MS);
+    const timer = setTimeout(unsend, ANSWER_RETRY_MS);
     return () => clearTimeout(timer);
   }, [sent]);
   const answer = useRef<(answers: unknown) => void>(() => {});
   answer.current = (answers) => {
-    if (shown?.state !== 'open' || sent) return;
-    if (useSessions.getState().send({ t: 'pmPage', pm, page: shown.id, action: 'answer', answers })) setSent(true);
+    if (sentRef.current) return;
+    // nothing went (the page no longer open, the connection down): the kit may send again
+    if (shown?.state !== 'open' || !useSessions.getState().send({ t: 'pmPage', pm, page: shown.id, action: 'answer', answers })) {
+      frame.current?.contentWindow?.postMessage({ openSpace: 'unsent' }, '*');
+      return;
+    }
+    sentRef.current = true;
+    setSent(true);
   };
   const tellTheme = () => frame.current?.contentWindow?.postMessage({ openSpace: 'theme', ...currentTheme() }, '*');
 

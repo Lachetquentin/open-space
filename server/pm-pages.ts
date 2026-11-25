@@ -106,7 +106,9 @@ table{width:100%;margin:0 0 1em;border-collapse:collapse}th,td{padding:.4em .5em
  *   data-answer that is no field: its data-value, or its text, once pressed; one per name unless data-multiple).
  * Send is a click on an element with data-submit, on a form's submit button (the sandbox lets no form be submitted, so the
  * kit takes it), Enter in a form's field, or the Send button the kit adds when the page has something to answer and no
- * way to send it. The page's own script may call OpenSpacePage.submit(answers?) and OpenSpacePage.answers().
+ * way to send it. The page's own script may call OpenSpacePage.submit(answers?) and OpenSpacePage.answers(). Once sent, the
+ * root carries data-sent and Send does nothing until the window says `{ openSpace: 'unsent' }` (nothing went, the answer
+ * was refused, the page opened again).
  */
 const KIT_SCRIPT = `(function () {
   'use strict';
@@ -116,7 +118,9 @@ const KIT_SCRIPT = `(function () {
   function say(message) { if (host) host.postMessage(message, '*'); }
   addEventListener('message', function (event) {
     var message = event.data;
-    if (event.source !== host || !message || message.openSpace !== 'theme') return;
+    if (event.source !== host || !message) return;
+    if (message.openSpace === 'unsent') { root.removeAttribute('data-sent'); return; }
+    if (message.openSpace !== 'theme') return;
     var vars = message.vars && typeof message.vars === 'object' ? message.vars : {};
     Object.keys(vars).forEach(function (name) {
       if (/^--[\\w-]+$/.test(name) && typeof vars[name] === 'string') root.style.setProperty(name, vars[name]);
@@ -155,6 +159,7 @@ const KIT_SCRIPT = `(function () {
     return found;
   }
   function submit(given) {
+    if (root.hasAttribute('data-sent')) return;
     var sent = given === undefined ? answers() : given;
     try { say({ type: 'pm.page.submit', answers: JSON.parse(JSON.stringify(sent)) }); root.setAttribute('data-sent', ''); } catch (error) { console.error(error); }
   }
