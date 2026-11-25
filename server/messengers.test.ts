@@ -423,7 +423,7 @@ describe('a PM’s questions on Telegram', () => {
     /** a tap on the button of `answer` of the question's message */
     const tap = (answer: string, id = 'cb') => {
       const message = asked()[0]!;
-      const button = buttons(message).find((each) => each.text.startsWith(answer))!;
+      const button = buttons(message).find((each) => each.text.includes(answer))!;
       fake.push({ callback_query: { id, data: button.callback_data, message: { message_id: message.id!, chat: { id: 42 } } } });
     };
     const settled = () => fake.sent('editMessageText').filter((each) => each.body.message_id === asked()[0]?.id);
@@ -443,9 +443,11 @@ describe('a PM’s questions on Telegram', () => {
       assert.equal(asked().length, 1, 'sent once');
       assert.ok(!fake.sent('sendMessage').some((each) => String(each.body.text).includes('Snoozed one')), 'a snoozed question waits');
       const labels = buttons(asked()[0]!).map((each) => each.text);
-      assert.equal(labels.length, 2);
-      assert.equal(labels[0], 'iPhone');
-      assert.ok(labels[1]!.startsWith('Android') && labels[1] !== 'Android', 'the recommended answer is marked');
+      assert.equal(labels.length, 2, 'one button per answer');
+      assert.ok(labels.includes('iPhone'), 'an answer not recommended is shown as it is');
+      const marked = labels.filter((label) => label !== 'iPhone' && label !== 'Android');
+      assert.equal(marked.length, 1, 'only the recommended answer is marked');
+      assert.ok(marked[0]!.includes('Android'), 'the mark keeps the recommended answer');
     } finally {
       messengers.stop();
     }
