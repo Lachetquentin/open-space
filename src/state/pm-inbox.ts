@@ -1,7 +1,7 @@
 // What a PM's Inbox shows above its message field (src/command/PmInbox.tsx), from its plan as the server sends it
 // (PmDetail): the questions waiting for the user, the live pages to fill, the tasks they block, what the last turn
 // finished; in its drawers, the snoozed and settled questions and the closed tasks. Pure functions.
-import { askTag, asksShown, itemStatus, type PmAsk, type PmDetail, type PmItem, type PmPage } from '../../shared/pm.ts';
+import { asksShown, itemStatus, type PmAsk, type PmDetail, type PmItem, type PmPage } from '../../shared/pm.ts';
 import { pagesToFill } from './pm-pages.ts';
 import { itemSections, planOf } from './pm-project.ts';
 
@@ -28,18 +28,16 @@ export interface Inbox {
 }
 
 /**
- * The Inbox of a PM at `now`: its open questions not snoozed (a snooze past brings one back), oldest first, but those an
- * open page asks (answered from that page); its pages to fill, oldest first; its blocked tasks whose blocking question is
- * listed nowhere (snoozed); the tasks finished during its last turn or the one under way.
+ * The Inbox of a PM at `now`: its open questions not snoozed (a snooze past brings one back), oldest first; its pages to
+ * fill (open, about questions), oldest first; its blocked tasks whose blocking question is not among them (snoozed); the
+ * tasks finished during its last turn or the one under way.
  */
 export function pmInbox(detail: PmDetail, now: number): Inbox {
   const file = planOf(detail);
   const shown = asksShown(file, now);
   const pages = pagesToFill(detail);
-  const onPage = new Set(pages.flatMap((page) => page.questions));
-  const open = shown.open.filter((ask) => !onPage.has(askTag(ask.no))).sort((a, b) => a.createdAt - b.createdAt || a.no - b.no);
-  // a question asked by a page is in the Inbox too, on the page's row
-  const listed = (item: PmItem) => shown.open.some((ask) => ask.item === item.no && ask.holds);
+  const open = [...shown.open].sort((a, b) => a.createdAt - b.createdAt || a.no - b.no);
+  const listed = (item: PmItem) => open.some((ask) => ask.item === item.no && ask.holds);
   const current = detail.items.filter((item) => !item.archived);
   const blocked = current.filter((item) => itemStatus(item, file, detail.live) === 'blocked' && !listed(item));
   // a task's touchedTurn is the PM's turn under way when it last changed (the count moves at each turn's end)

@@ -3,7 +3,7 @@
 // kit and policy, server/pm-pages.ts), under a title bar that carries it, resized by its edges and corners, folded to its
 // title. It stays open while the user types elsewhere, and follows its plan (usePmDetail): a page replaced by a newer
 // one of its source shows the newer one, a page no longer there says so.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { PmPage } from '../../shared/pm.ts';
 import { t } from '../i18n/index.ts';
 import { readPreference, writePreference } from '../lib/preferences.ts';
@@ -139,7 +139,7 @@ function PageWindow({ pm, asked }: { pm: string; asked: string }) {
   return (
     <section
       className="cp-mod cp-pm-page" aria-label={words.windowLabel(shown?.title ?? '')} data-folded={folded} data-moving={!!moved || undefined}
-      style={{ ...boxVariables(shownBox), '--depth': 20 } as CSSProperties}
+      style={boxVariables(shownBox)}
       onPointerMove={drag} onPointerUp={drop} onPointerCancel={drop}
     >
       <header className="cp-mod__head" onPointerDown={(event) => grab(null, event)} onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest(INTERACTIVE)) fold(); }}>
@@ -206,7 +206,7 @@ function Reply({ pm, lead, page }: { pm: string; lead: string; page: PmPage }) {
   return (
     <div className="cp-pm-page__reply">
       <textarea
-        className="cp-pm-page__field" value={text} aria-label={words.replyLabel} placeholder={words.replyPlaceholder} rows={2} data-autofocus
+        className="cp-pm-page__field" value={text} aria-label={words.replyLabel} placeholder={words.replyPlaceholder} rows={2} autoFocus
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); reply(); } }}
       />

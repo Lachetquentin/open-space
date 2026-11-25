@@ -8,6 +8,7 @@ import { CopyOnSelect } from './CopyOnSelect.tsx';
 import { Detail } from './Detail.tsx';
 import { ModWindow } from './ModWindows.tsx';
 import { ConnectionBanner } from './Notices.tsx';
+import { PmPageWindow } from './PmPageWindow.tsx';
 import { usePageStyle } from './usePageStyle.ts';
 
 const NO_SPOT = { left: 0, top: 0 };
@@ -60,6 +61,8 @@ export function OutApp({ target }: { target: OutTarget }) {
       {target.kind === 'session' && session && <Detail sessionId={session.id} detached />}
       {target.kind === 'mod' && mod && <ModWindow mod={mod} depth={0} spot={NO_SPOT} detached />}
       {target.kind === 'browser' && session && <OutBrowser session={session} lane={target.lane} />}
+      {/* a PM's live page opened from its thread or its Inbox in this window */}
+      {target.kind === 'session' && <PmPageWindow />}
       <CopyOnSelect />
     </div>
   );

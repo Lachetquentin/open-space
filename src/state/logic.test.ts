@@ -772,14 +772,14 @@ describe('project managers in the page', () => {
       assert.deepEqual([rows(inbox), inbox.more, inbox.counts], [['Q1', 'Q2', 'Q3', 'Q4'], 1, { asks: 4, pages: 0, blocked: 0, finished: 1 }]);
     });
 
-    it('lists an open page that asks questions after the questions, those questions on its row rather than on their own', () => {
+    it('lists an open page that asks questions after the questions, and no page that asks none or is settled', () => {
       const page = (id: string, extra: Partial<PmPage> = {}): PmPage => ({ id, source: id, title: id, questions: [], state: 'open', createdAt: 0, ...extra });
       const inbox = pmInbox(detail({
         items: [item(1)],
         asks: [ask(1, { item: 1, holds: true }), ask(2)],
         pages: [page('quiet'), page('done', { questions: ['Q2'], state: 'answered' }), page('form', { questions: ['Q1'] })],
       }), 0);
-      assert.deepEqual(rows(inbox), ['Q2', 'page:form']);
+      assert.deepEqual(rows(inbox), ['Q1', 'Q2', 'page:form']);
     });
   });
 });
