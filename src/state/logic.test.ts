@@ -363,6 +363,7 @@ describe('buildFeed', () => {
     };
     const cases: [string, string[], string | null][] = [
       ['followed by the questions set aside', ['{', '  "page": "a1b2c3d4e5f6"', '}', 'The user set aside Q2.'], 'a1b2c3d4e5f6'],
+      ['on one line', ['{"page":"a1b2c3d4e5f6"}', 'The user set aside Q2.'], 'a1b2c3d4e5f6'],
       ['not JSON', ['Shown: a1b2c3d4e5f6'], null],
       ['JSON cut short', ['{', '  "page": "a1b2c3d4e5f6"'], null],
       ['a page that is not a text', ['{', '  "page": 12', '}'], null],

@@ -183,15 +183,21 @@ function pageAnswers(text: string): unknown {
 const PM_PAGE_TOOL = `mcp__${MCP_SERVER_NAME}__pm_page_show`;
 
 /**
- * The page pm_page_show gave back (its result, `{ "page": "<id>" }` as indented JSON, server/pm-tools.ts); null when there
- * is none. The JSON ends at its first line `}`: the questions the user set aside may follow it, in a block of their own.
+ * The page pm_page_show gave back (its result, `{ "page": "<id>" }` as JSON, server/pm-tools.ts); null when there is
+ * none. The JSON is the first lines that read as JSON: the questions the user set aside may follow it, in a block of their own.
  */
 function shownPage(lines: readonly string[]): string | null {
-  try {
-    const page: unknown = JSON.parse(lines.slice(0, lines.indexOf('}') + 1).join('\n'))?.page;    return typeof page === 'string' && PAGE_ID.test(page) ? page : null;
-  } catch {
-    return null;
+  for (let end = 1; end <= lines.length; end++) {
+    let result: unknown;
+    try {
+      result = JSON.parse(lines.slice(0, end).join('\n'));
+    } catch {
+      continue;
+    }
+    const page = result && typeof result === 'object' ? (result as { page?: unknown }).page : undefined;
+    return typeof page === 'string' && PAGE_ID.test(page) ? page : null;
   }
+  return null;
 }
 
 /** The "!" commands of a session still running: started, not ended yet (what Escape stops). */
