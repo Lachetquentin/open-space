@@ -202,6 +202,8 @@ const HIDDEN_FILES = [...['secret', 'mcp-key', 'trigger-keys.json', 'mods-env.js
 const crew = new Crew(path.join(config.dataDir, 'crew.json'));
 await crew.load();
 
+/** The project managers' files (server/pm.ts); a session forgotten takes its own with it, a PM made ordinary keeps it. */
+const pmBook = new PmBook(path.join(config.dataDir, 'pm'));
 /** What the pages see of the PMs and do with them (server/pm-desk.ts), set once the PM files are at hand, below. */
 let pmDesk: PmDesk | undefined;
 
@@ -300,7 +302,11 @@ const messengers = new Messengers({
   triggers: () => triggers.list(),
   answer: (sessionId, requestId, decision) => sessions.answer(sessionId, requestId, decision),
   reply: (sessionId, requestId, answers) => sessions.reply(sessionId, requestId, answers),
-  send: (sessionId, text, files) => sessions.send(sessionId, text, [], files),
+  send: (sessionId, text, files) => {
+    sessions.send(sessionId, text, [], files);
+    // "W4 Q3: …" written to a PM answers that question, as from the page
+    pmDesk?.typed(sessionId, text).catch((error: unknown) => log('messengers: cannot read an answer to a PM question', error));
+  },
   interrupt: (sessionId) => sessions.interrupt(sessionId),
   remote: (sessionId, enabled) => mcpApi.remote(sessionId, enabled),
   fire: (triggerId, payload) => triggers.fire(triggerId, 'manual', payload),
@@ -316,6 +322,13 @@ const messengers = new Messengers({
     : async (_bot, _text, conversation) => ({ text: st.messengers.agentFailed, conversation }),
   // the same path as the box in Open Space (the page's `secrets` message)
   giveSecrets: (sessionId, requestId, entries) => sessions.giveSecrets(sessionId, requestId, entries),
+  pm: {
+    enabled: () => pmSettings(settings.preferences).enabled,
+    // a file not read yet is read for the next look
+    file: (pm) => pmBook.cached(pm) ?? void pmBook.read(pm).catch((error: unknown) => log(`messengers: cannot read the PM file of ${pm}`, error)),
+    // the answer path of every channel: the first answer wins
+    answer: (pm, ask, answer) => pmDesk?.answer(pm, ask, answer) ?? Promise.resolve({ error: st.pm.disabled }),
+  },
   onChange: () => broadcast(triggersMessage()),
   log,
 });
@@ -398,8 +411,6 @@ async function makeMod(request: string) {
   return { mod, sessionId: session.id };
 }
 
-/** The project managers' files (server/pm.ts); a session forgotten takes its own with it, a PM made ordinary keeps it. */
-const pmBook = new PmBook(path.join(config.dataDir, 'pm'));
 sessions.onSessionForgotten((session) => { pmBook.remove(session.id).catch((error: unknown) => log(`cannot remove the PM file of ${session.name}`, error)); });
 const findSession = (sessionId: string) => sessions.list().find((session) => session.id === sessionId);
 /** A message of Open Space to a PM (a worker's report, the user's answer, a change of its plan): queued while it works. */

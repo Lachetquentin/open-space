@@ -200,6 +200,7 @@ export const en: ServerDictionary = {
     finished: 'is done',
     permission: 'needs your permission',
     question: 'has a question for you',
+    decision: 'waits for your decision',
     error: 'ran into an error',
   },
   terminal: {
@@ -301,6 +302,10 @@ export const en: ServerDictionary = {
     answered: (answer: string) => `Answered: ${answer}`,
     answeredElsewhere: 'Answered in Open Space.',
     expired: 'This request no longer waits.',
+    pmAsk: (who: string, tag: string, title: string, detail: string) => `${who} asks you (${tag}):\n${title}${detail ? `\n\n${detail}` : ''}`,
+    recommended: (answer: string) => `${answer} (recommended)`,
+    replyToAnswer: 'Reply to this message to answer.',
+    askSettled: 'Question settled.',
     done: (name: string, said: string) => `${name} is done.${said ? `\n\n${said}` : ''}`,
     failed: (name: string) => `${name} stopped on an error. Have a look in Open Space.`,
     linked: (name: string) => `Linked: ${name} will tell you here. Write to me in plain words, or /help for the commands.`,

@@ -227,6 +227,7 @@ export const fr = {
     finished: 'a terminé',
     permission: 'demande une autorisation',
     question: 'te pose une question',
+    decision: 'attend ta décision',
     error: 'a rencontré une erreur',
   },
   terminal: {
@@ -329,6 +330,10 @@ export const fr = {
     answered: (answer: string) => `Répondu : ${answer}`,
     answeredElsewhere: 'Répondu dans Open Space.',
     expired: 'Cette demande n’attend plus.',
+    pmAsk: (who: string, tag: string, title: string, detail: string) => `${who} te demande (${tag}) :\n${title}${detail ? `\n\n${detail}` : ''}`,
+    recommended: (answer: string) => `${answer} (conseillé)`,
+    replyToAnswer: 'Réponds à ce message pour répondre.',
+    askSettled: 'Question réglée.',
     done: (name: string, said: string) => `${name} a fini.${said ? `\n\n${said}` : ''}`,
     failed: (name: string) => `${name} s’est arrêté sur une erreur. Regarde dans Open Space.`,
     linked: (name: string) => `C’est branché : ${name} te préviendra ici. Écris-moi en langage normal, ou /help pour les commandes.`,
