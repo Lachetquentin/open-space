@@ -42,12 +42,12 @@ describe('parseClientMessage', () => {
   it('reads a change of a PM’s mission, instructions or memory within their limits', () => {
     assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', mission: 'Ship', other: 1 }), { t: 'pmEdit', pm: 'p1', mission: 'Ship' });
     assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', instructions: '' }), { t: 'pmEdit', pm: 'p1', instructions: '' }, 'cleared');
-    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', memory: { op: 'edit', index: 0, text: 'x' } }), { t: 'pmEdit', pm: 'p1', memory: { op: 'edit', index: 0, text: 'x' } });
-    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', memory: { op: 'delete', index: 2, text: 'x' } }), { t: 'pmEdit', pm: 'p1', memory: { op: 'delete', index: 2 } });
+    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', memory: { op: 'edit', index: 0, was: 'w', text: 'x' } }), { t: 'pmEdit', pm: 'p1', memory: { op: 'edit', index: 0, was: 'w', text: 'x' } });
+    assert.deepEqual(parseClientMessage({ t: 'pmEdit', pm: 'p1', memory: { op: 'delete', index: 2, was: 'w', text: 'x' } }), { t: 'pmEdit', pm: 'p1', memory: { op: 'delete', index: 2, was: 'w' } });
     for (const bad of [
       { pm: 'p1' }, { pm: '../x', mission: 'x' }, { pm: 'p1', mission: 'x'.repeat(PM_LIMITS.mission + 1) }, { pm: 'p1', instructions: 'x'.repeat(PM_LIMITS.instructions + 1) },
-      { pm: 'p1', memory: { op: 'add', text: 'x'.repeat(PM_LIMITS.note + 1) } }, { pm: 'p1', memory: { op: 'edit', index: -1, text: 'x' } },
-      { pm: 'p1', memory: { op: 'delete', index: 1.5 } }, { pm: 'p1', memory: { op: 'move', index: 0 } }, { pm: 'p1', mission: 3 },
+      { pm: 'p1', memory: { op: 'add', text: 'x'.repeat(PM_LIMITS.note + 1) } }, { pm: 'p1', memory: { op: 'edit', index: -1, was: 'w', text: 'x' } }, { pm: 'p1', memory: { op: 'delete', index: 0 } },
+      { pm: 'p1', memory: { op: 'delete', index: 1.5, was: 'w' } }, { pm: 'p1', memory: { op: 'move', index: 0 } }, { pm: 'p1', mission: 3 },
     ]) assert.equal(parseClientMessage({ t: 'pmEdit', ...bad }), null, JSON.stringify(bad));
   });
 

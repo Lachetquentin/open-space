@@ -101,7 +101,7 @@ describe('the page’s PM requests', () => {
     const { desk, book, delivered, page } = await office();
     await book.change(PM, (file) => { remember(file, 'Uses pnpm', 1); });
     const { send } = page();
-    await desk.handle({ t: 'pmEdit', pm: PM, mission: 'Ship the app', memory: { op: 'edit', index: 0, text: 'Uses npm' } }, send);
+    await desk.handle({ t: 'pmEdit', pm: PM, mission: 'Ship the app', memory: { op: 'edit', index: 0, was: 'Uses pnpm', text: 'Uses npm' } }, send);
     await desk.handle({ t: 'pmEdit', pm: PM, mission: ' Ship the app ' }, send);
     assert.equal(delivered.length, 1);
     assert.deepEqual(delivered[0].tag, { change: true });
@@ -111,7 +111,7 @@ describe('the page’s PM requests', () => {
 
   it('changes nothing when part of an edit is refused', async () => {
     const { desk, book, delivered, page } = await office();
-    await assert.rejects(desk.handle({ t: 'pmEdit', pm: PM, mission: 'Ship', memory: { op: 'delete', index: 4 } }, page().send));
+    await assert.rejects(desk.handle({ t: 'pmEdit', pm: PM, mission: 'Ship', memory: { op: 'delete', index: 4, was: 'x' } }, page().send));
     assert.equal((await book.read(PM)).mission, '');
     assert.deepEqual(delivered, []);
   });

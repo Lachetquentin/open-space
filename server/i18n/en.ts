@@ -343,6 +343,7 @@ export const en: ServerDictionary = {
     emptyWait: 'Say what the task waits on: W<n>, Q<n> or a text.',
     memoryFull: (max: number) => `The memory is full (${max} notes): forget a note before keeping another one.`,
     noNote: (number: number) => `There is no note ${number}.`,
+    noteChanged: (number: number) => `Note ${number} has changed since you saw it.`,
     tooManyItems: (max: number) => `This plan already has ${max} tasks: no more can be added.`,
     noItem: (tag: string) => `${tag} does not exist.`,
     tooManySteps: (tag: string, max: number) => `${tag} already has ${max} steps.`,

@@ -230,6 +230,7 @@ export function editMemory(file: PmFile, change: PmMemoryOp, now: number): { num
   }
   const note = Number.isInteger(change.index) && change.index >= 0 ? file.memory[change.index] : undefined;
   if (!note) return fail(st.pm.noNote(change.index + 1));
+  if (note.text !== change.was) return fail(st.pm.noteChanged(change.index + 1));
   if (change.op === 'delete') {
     file.memory.splice(change.index, 1);
     return { number: change.index + 1, text: note.text };

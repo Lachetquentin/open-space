@@ -192,9 +192,10 @@ function parseMemoryOp(raw: unknown): PmMemoryOp | null {
   if (!isJson(raw)) return null;
   const text = boundedString(raw.text, PM_LIMITS.note);
   const index = wholeNumber(raw.index, 0);
+  const was = boundedString(raw.was, PM_LIMITS.note);
   if (raw.op === 'add') return text === null ? null : { op: 'add', text };
-  if (raw.op === 'edit') return text === null || index === null ? null : { op: 'edit', index, text };
-  if (raw.op === 'delete') return index === null ? null : { op: 'delete', index };
+  if (raw.op === 'edit') return text === null || index === null || was === null ? null : { op: 'edit', index, was, text };
+  if (raw.op === 'delete') return index === null || was === null ? null : { op: 'delete', index, was };
   return null;
 }
 

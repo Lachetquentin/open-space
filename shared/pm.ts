@@ -280,8 +280,8 @@ export type PmLine = 'blocked' | 'yours' | 'working' | 'calm';
 export interface PmSummary { items: number; asks: number; workers: number; working: number; line: PmLine; nextWake?: number }
 /** What the page that looks at a PM gets: its file without the report keys, and what its workers are doing now. */
 export type PmDetail = Omit<PmFile, 'reports'> & { pm: string; live: WorkerLive[] };
-/** A change of a PM's memory from the page; `index`: the note's place in the memory, from 0. */
-export type PmMemoryOp = { op: 'add'; text: string } | { op: 'edit'; index: number; text: string } | { op: 'delete'; index: number };
+/** A change of a PM's memory from the page; `index`: the note's place in the memory, from 0; `was`: its text as the page saw it. */
+export type PmMemoryOp = { op: 'add'; text: string } | { op: 'edit'; index: number; was: string; text: string } | { op: 'delete'; index: number; was: string };
 export const PM_ASK_ACTIONS = ['answer', 'snooze', 'wake', 'dismiss', 'undoDismiss'] as const;
 export type PmAskAction = (typeof PM_ASK_ACTIONS)[number];
 

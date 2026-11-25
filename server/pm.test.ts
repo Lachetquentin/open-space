@@ -202,19 +202,28 @@ describe('the memory changed from the page', () => {
 
   it('adds, changes and deletes a note by its place from 0', () => {
     const file = withNotes('First', 'Second', 'Third');
-    assert.deepEqual(editMemory(file, { op: 'edit', index: 0, text: 'Changed' }, 5), { number: 1, text: 'Changed' });
+    assert.deepEqual(editMemory(file, { op: 'edit', index: 0, was: 'First', text: 'Changed' }, 5), { number: 1, text: 'Changed' });
     assert.deepEqual(file.memory[0], { text: 'Changed', at: 5 });
-    assert.deepEqual(editMemory(file, { op: 'delete', index: 1 }, 6), { number: 2, text: 'Second' });
+    assert.deepEqual(editMemory(file, { op: 'delete', index: 1, was: 'Second' }, 6), { number: 2, text: 'Second' });
     assert.deepEqual(file.memory.map((note) => note.text), ['Changed', 'Third']);
     assert.deepEqual(editMemory(file, { op: 'add', text: 'Fourth' }, 7), { number: 3, text: 'Fourth' });
   });
 
   it('refuses a note that is not there, or empty, and changes nothing', () => {
     const file = withNotes('First');
-    for (const op of [{ op: 'edit', index: 1, text: 'x' }, { op: 'delete', index: 1 }, { op: 'delete', index: -1 }, { op: 'edit', index: 0, text: '  ' }, { op: 'add', text: '' }] as const) {
+    for (const op of [{ op: 'edit', index: 1, was: 'x', text: 'x' }, { op: 'delete', index: 1, was: 'x' }, { op: 'delete', index: -1, was: 'First' }, { op: 'edit', index: 0, was: 'First', text: '  ' }, { op: 'add', text: '' }] as const) {
       assert.ok(isError(editMemory(file, op, 5)), JSON.stringify(op));
     }
     assert.deepEqual(file.memory, [{ text: 'First', at: 1 }]);
+  });
+
+  it('refuses a change of a note that is no longer the one the page saw, and changes nothing', () => {
+    const file = withNotes('First', 'Second');
+    file.memory.shift(); // the PM forgot 'First' meanwhile: index 0 is now 'Second'
+    for (const op of [{ op: 'delete', index: 0, was: 'Second?' }, { op: 'edit', index: 0, was: 'First', text: 'x' }] as const) {
+      assert.ok(isError(editMemory(file, op, 5)), JSON.stringify(op));
+    }
+    assert.deepEqual(file.memory, [{ text: 'Second', at: 1 }]);
   });
 });
 
@@ -279,7 +288,7 @@ describe('a PM file after every operation', () => {
     dismissAsk(file, 4, 7);
     undoDismiss(file, 4);
     archiveItem(file, 0);
-    editMemory(file, { op: 'edit', index: 0, text: 'Uses npm' }, 8);
+    editMemory(file, { op: 'edit', index: 0, was: 'Uses pnpm', text: 'Uses npm' }, 8);
     assert.deepEqual(parsePmFile(JSON.parse(JSON.stringify(file))), file);
   });
 });

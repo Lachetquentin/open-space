@@ -155,8 +155,8 @@ function Memory({ pm, notes }: { pm: string; notes: PmDetail['memory'] }) {
       <ul className="cp-pm__notes">
         {notes.map((note, index) => (
           <li key={`${note.at}-${note.text}`} className="cp-pm__note">
-            <EditableText label={words.editNote} value={note.text} empty="" max={PM_LIMITS.note} onSave={(text) => pmEdit(pm, { memory: text ? { op: 'edit', index, text } : { op: 'delete', index } })} />
-            <button type="button" className="cp-pm__icon" aria-label={words.deleteNote} title={words.deleteNote} onClick={() => pmEdit(pm, { memory: { op: 'delete', index } })}><CloseIcon /></button>
+            <EditableText label={words.editNote} value={note.text} empty="" max={PM_LIMITS.note} onSave={(text) => pmEdit(pm, { memory: text ? { op: 'edit', index, was: note.text, text } : { op: 'delete', index, was: note.text } })} />
+            <button type="button" className="cp-pm__icon" aria-label={words.deleteNote} title={words.deleteNote} onClick={() => pmEdit(pm, { memory: { op: 'delete', index, was: note.text } })}><CloseIcon /></button>
           </li>
         ))}
       </ul>

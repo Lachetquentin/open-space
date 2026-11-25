@@ -372,6 +372,7 @@ export const fr = {
     emptyWait: 'Dis ce que la tâche attend : W<n>, Q<n> ou un texte.',
     memoryFull: (max: number) => `La mémoire est pleine (${max} notes) : oublie une note avant d’en garder une autre.`,
     noNote: (number: number) => `Il n’y a pas de note ${number}.`,
+    noteChanged: (number: number) => `La note ${number} a changé depuis que tu l’as vue.`,
     tooManyItems: (max: number) => `Ce plan a déjà ${max} tâches : impossible d’en ajouter.`,
     noItem: (tag: string) => `${tag} n’existe pas.`,
     tooManySteps: (tag: string, max: number) => `${tag} a déjà ${max} étapes.`,
