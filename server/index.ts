@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { WebSocket } from 'ws';
 import { defaultFolder } from '../shared/folders.ts';
-import { isPermissionMode, type AccountsBrowser, type AppUpdate, type ClaudeAccount, type ClaudeInfo, type ClientMessage, type ServerMessage, type SessionOptions } from '../shared/protocol.ts';
+import { isPermissionMode, type AccountsBrowser, type AppUpdate, type AttentionKind, type ClaudeAccount, type ClaudeInfo, type ClientMessage, type ServerMessage, type SessionInfo, type SessionOptions } from '../shared/protocol.ts';
 import type { MusicApp } from '../shared/music.ts';
 import { type PmMessageTag, pmSettings } from '../shared/pm.ts';
 import type { PhoneProblem } from '../shared/triggers.ts';
@@ -99,6 +99,10 @@ const clients = new Set<WebSocket>();
 const presence = new Map<WebSocket, boolean>();
 const settings = new Settings(path.join(config.dataDir, 'settings.json'));
 await settings.load();
+/** A notification of what a session waits for, when the user wants them and no tab is in front; `said`: see notify. */
+function notifyAway(session: SessionInfo, kind: AttentionKind, said?: string) {
+  if (settings.notifications && ![...presence.values()].some(Boolean)) notify(session, kind, log, said);
+}
 setServerLanguage(settings.preferences.language ?? 'fr');
 // the folders sessions may run in: OFFICE_ROOTS when set, else the user's choice (the session manager reads config.roots)
 const applyRoots = () => { if (!config.rootsLocked) config.roots = settings.preferences.roots.filter((root) => existsSync(root)); };
@@ -228,9 +232,7 @@ const sessions = new SessionManager({
   onShown: (session) => pmDesk?.sessionShown(session),
   broadcast,
   log,
-  onAttention: (kind, session) => {
-    if (settings.notifications && ![...presence.values()].some(Boolean)) notify(session, kind, log);
-  },
+  onAttention: (kind, session) => notifyAway(session, kind),
   browserMcp,
   // the open-space MCP server (server/mcp.ts), for the sessions whose folder was trusted: a restricted one could
   // otherwise start sessions or triggers elsewhere
@@ -418,6 +420,8 @@ const deliverToPm = (pm: string, text: string, tag: PmMessageTag) => sessions.se
 const desk = new PmDesk({
   book: pmBook, sessions: () => sessions.list(), enabled: () => pmSettings(settings.preferences).enabled, now: Date.now,
   republish: (sessionId) => sessions.republish(sessionId), deliver: deliverToPm, log,
+  // straight to the notifier: the chat bots tell a PM's questions themselves (messengers.ts)
+  notifyDecision: (pm, ask) => notifyAway(pm, 'decision', ask.title),
 });
 pmDesk = desk;
 sessions.onSessionForgotten((session) => desk.forgotten(session.id));

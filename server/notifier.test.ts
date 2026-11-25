@@ -22,5 +22,6 @@ describe('notifications', () => {
     const question = session({ state: 'perm', permissions: [{ requestId: 'r', who: 'chef', tool: 'AskUserQuestion', detail: '', canAlways: false, questions: [{ question: 'Lequel ?', header: 'Choix', multiSelect: false, options: [] }] }] });
     assert.deepEqual(notificationText(question, 'question'), { title: 'Lina te pose une question', body: 'Lequel ?' });
     assert.equal(notificationText(session({ lastMessage: 'x'.repeat(500) }), 'finished').body.length, 180);
+    assert.equal(notificationText(asks, 'decision', 'Quel\nmagasin ?').body, 'Quel magasin ?', 'a PM’s question, not what its session waits for');
   });
 });

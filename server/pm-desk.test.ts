@@ -27,6 +27,7 @@ async function office() {
   const setting = { enabled: true };
   const delivered: { pm: string; text: string; tag: PmMessageTag }[] = [];
   const republished: string[] = [];
+  const decisions: { pm: string; ask: number }[] = [];
   const timers: { at: number; run: () => void; cleared: boolean }[] = [];
   const book = new PmBook(mkdtempSync(path.join(base, 'book-')));
   live.set(PM, info(PM, { pm: true }));
@@ -36,13 +37,14 @@ async function office() {
     book, sessions: () => [...live.values()], enabled: () => setting.enabled, now: () => clock.now,
     republish: (id) => { republished.push(id); },
     deliver: (pm, text, tag) => { delivered.push({ pm, text, tag }); },
+    notifyDecision: (pm, ask) => { decisions.push({ pm: pm.id, ask: ask.no }); },
     setTimer: (run, ms) => { const timer = { at: clock.now + ms, run, cleared: false }; timers.push(timer); return { clear: () => { timer.cleared = true; } }; },
   });
   const put = (id: string, fields: Partial<SessionInfo>) => { live.set(id, { ...(live.get(id) as SessionInfo), ...fields }); return live.get(id) as SessionInfo; };
   /** a page: what it receives */
   const page = () => { const got: ServerMessage[] = []; const send = (message: ServerMessage) => { got.push(message); }; return { got, send }; };
   const details = (got: ServerMessage[]) => got.flatMap((message) => (message.t === 'pmDetail' ? [message] : []));
-  return { clock, live, setting, delivered, republished, timers, book, desk, put, page, details };
+  return { clock, live, setting, delivered, republished, decisions, timers, book, desk, put, page, details };
 }
 
 describe('the answer to a PM question', () => {
@@ -73,6 +75,27 @@ describe('the answer to a PM question', () => {
     const ask = (await book.read(PM)).asks[0];
     assert.deepEqual([ask.state, ask.answer], ['answered', 'Android, please']);
     assert.deepEqual(delivered, []);
+  });
+});
+
+describe('a question the PM asks the user', () => {
+  it('notifies the user once, and not of the questions its file already had', async () => {
+    const { desk, book, live, clock, decisions } = await office();
+    desk.summary(live.get(PM) as SessionInfo);
+    await book.change(PM, (file) => { addAsk(file, { title: 'Which store?', detail: '' }, clock.now); });
+    await book.change(PM, (file) => { remember(file, 'Uses pnpm', clock.now); });
+    assert.deepEqual(decisions, [{ pm: PM, ask: 2 }]);
+  });
+
+  it('notifies nobody while the setting is off or for a session that does not act as a PM', async () => {
+    for (const off of [{ setting: false }, { untrusted: true }]) {
+      const { desk, book, live, clock, setting, put, decisions } = await office();
+      desk.summary(live.get(PM) as SessionInfo);
+      if ('setting' in off) setting.enabled = false;
+      else put(PM, off);
+      await book.change(PM, (file) => { addAsk(file, { title: 'Which store?', detail: '' }, clock.now); });
+      assert.deepEqual(decisions, [], JSON.stringify(off));
+    }
   });
 });
 

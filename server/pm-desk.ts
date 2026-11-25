@@ -3,7 +3,7 @@
 // and for a session that acts as a PM (pm-guards.ts); otherwise it is ignored. The answer path (answer) is the one every
 // channel takes, so that a question takes one answer only and its PM hears it once.
 import {
-  answerMessage, type PmAsk, type PmDetail, type PmFile, type PmMessageTag, type PmSummary, pmSummary, typedAnswer, workerLive,
+  answerMessage, asksShown, type PmAsk, type PmDetail, type PmFile, type PmMessageTag, type PmSummary, pmSummary, typedAnswer, workerLive,
 } from '../shared/pm.ts';
 import type { ClientMessage, ServerMessage, SessionInfo } from '../shared/protocol.ts';
 import { st } from './i18n/index.ts';
@@ -27,6 +27,8 @@ export interface DeskDeps {
   republish: (sessionId: string) => void;
   /** sends a message to the PM: sessions.send(pm, text, [], [], tag) */
   deliver: (pm: string, text: string, tag: PmMessageTag) => void;
+  /** tells the user, out of the page (a notification), that the PM asks a new question */
+  notifyDecision?: (pm: SessionInfo, ask: PmAsk) => void;
   /** runs `run` in `ms`; replaceable in tests */
   setTimer?: (run: () => void, ms: number) => Timer;
   log?: (message: string, error: unknown) => void;
@@ -54,6 +56,8 @@ export class PmDesk {
   private readonly doing = new Map<string, string>();
   /** the PMs whose file is being read for the first time */
   private readonly loading = new Set<string>();
+  /** the numbers of the questions already in each PM's file: one not among them is new */
+  private readonly asked = new Map<string, Set<number>>();
 
   constructor(deps: DeskDeps) {
     this.deps = deps;
@@ -86,6 +90,7 @@ export class PmDesk {
 
   /** The PM's summary and plan sent again: its file changed, a worker moved, a snooze ended, its role changed. */
   refresh(pm: string): void {
+    this.announce(pm);
     // made an ordinary session again (pmRevert): no summary is asked of it any more, so its timer goes here
     if (!this.lead(pm)) this.wake(pm, undefined);
     this.deps.republish(pm);
@@ -209,12 +214,35 @@ export class PmDesk {
   /** The PM's file at hand; undefined the first time, while it is read (its summary and plan then go out). */
   private file(pm: string): PmFile | undefined {
     const file = this.deps.book.cached(pm);
+    if (file && !this.asked.has(pm)) this.asked.set(pm, numbers(file));
     if (file || this.loading.has(pm)) return file;
     this.loading.add(pm);
     this.deps.book.read(pm)
       .then(() => { this.loading.delete(pm); this.refresh(pm); })
       .catch((error: unknown) => { this.loading.delete(pm); this.deps.log?.(`cannot read the PM file of ${pm}`, error); });
     return undefined;
+  }
+
+  /**
+   * A question open in the PM's file that was not there before: the user is notified of it once, while the session acts
+   * as a PM. The questions of a file seen for the first time are not new: they were there before Open Space looked.
+   */
+  private announce(pm: string) {
+    const file = this.deps.book.cached(pm);
+    const known = this.asked.get(pm);
+    if (!file) { this.asked.delete(pm); return; }
+    this.asked.set(pm, numbers(file));
+    const { notifyDecision } = this.deps;
+    const lead = this.lead(pm);
+    if (!known || !notifyDecision || !lead) return;
+    for (const ask of asksShown(file, this.deps.now()).open) {
+      if (known.has(ask.no)) continue;
+      try {
+        notifyDecision(lead, ask);
+      } catch (error) {
+        this.deps.log?.('a PM question could not be notified', error);
+      }
+    }
   }
 
   /** What the PM's workers are doing now. */
@@ -253,6 +281,8 @@ export class PmDesk {
     this.wakes.set(pm, { at, timer });
   }
 }
+
+const numbers = (file: PmFile): Set<number> => new Set(file.asks.map((ask) => ask.no));
 
 /** A refusal of an operation, as the page's toast. */
 function refused(result: unknown): void {
