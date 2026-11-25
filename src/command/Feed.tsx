@@ -404,9 +404,9 @@ export const ShowInFeedContext = createContext<((at: number) => void) | null>(nu
  * `working`: the session is at it, so its thread ends on a typing indicator until something arrives. `drafts`: the
  * messages still being written, by who writes them ("chef" or a sub-agent id), shown as they grow.
  */
-export function Feed({ feed, sessionId, loading, speaker, working, drafts, agent, setAgent, focus = null }: {
+export function Feed({ feed, sessionId, loading, speaker, working, drafts, agent, setAgent, focus = null, onFocused }: {
   feed: FeedData; sessionId: string; loading: boolean; speaker: string; working: boolean; drafts: Readonly<Record<string, string>>;
-  agent: string | null; setAgent: (agentId: string | null) => void; focus?: FeedFocus | null;
+  agent: string | null; setAgent: (agentId: string | null) => void; focus?: FeedFocus | null; onFocused?: () => void;
 }) {
   // a picture, a page, a video or a text of the thread opened in large
   const [viewing, setViewing] = useState<Viewed | null>(null);
@@ -459,13 +459,15 @@ export function Feed({ feed, sessionId, loading, speaker, working, drafts, agent
     if (list.current) content.observe(list.current);
     return () => { box.disconnect(); content.disconnect(); };
   }, [listShown]);
-  // a question of the Inbox shown where it was asked: the thread stops following and goes there, once per request;
-  // older than the entries in the page, it is not found and the user is told
+  // a question of the Inbox shown where it was asked: the thread stops following and goes there, once per request, which
+  // is then handed back (onFocused) so that coming back to the thread later does not go there again; older than the
+  // entries in the page, it is not found and the user is told
   const toast = useSessions((s) => s.toast);
   const focused = useRef<number | null>(null);
   useEffect(() => {
     if (!focus || focus.key === focused.current || loading) return;
     focused.current = focus.key;
+    onFocused?.();
     const id = askEntry(entries, focus.at);
     const target = id === null ? null : list.current?.querySelector<HTMLElement>(`[data-entry="${id}"]`);
     if (!target) { toast('info', t.pm.inbox.notInFeed); return; }
@@ -475,7 +477,7 @@ export function Feed({ feed, sessionId, loading, speaker, working, drafts, agent
     if (details) details.open = true;
     // at once, as the search does: a smooth scroll is cut short by the menu giving the focus back to its button
     target.scrollIntoView({ block: 'center' });
-  }, [focus, entries, loading, toast]);
+  }, [focus, entries, loading, toast, onFocused]);
   const onScroll = (el: HTMLDivElement) => {
     if (Date.now() - gesture.current > 1000) return;
     stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;

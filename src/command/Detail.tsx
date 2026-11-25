@@ -309,7 +309,7 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
         : panelView === 'mcp' ? <McpView sessionId={session.id} cwd={session.cwd} onBack={back} />
           : panelView === 'context' ? <ContextView sessionId={session.id} onBack={back} />
             : panelView === 'usage' ? <UsageView sessionId={session.id} onBack={back} />
-              : <Feed feed={feed} sessionId={session.id} loading={!loaded} speaker={session.name} working={isRunning(session) && session.state !== 'perm'} drafts={drafts} agent={agent} setAgent={setAgent} focus={feedFocus} />}
+              : <Feed feed={feed} sessionId={session.id} loading={!loaded} speaker={session.name} working={isRunning(session) && session.state !== 'perm'} drafts={drafts} agent={agent} setAgent={setAgent} focus={feedFocus} onFocused={() => setFeedFocus(null)} />}
       <AsidePanel session={session} />
       {/* at the bottom, by the field, as in Claude Code */}
       {first && (first.secrets ? <SecretPrompt key={first.requestId} sessionId={session.id} prompt={first} />
