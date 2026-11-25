@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it, mock } from 'node:test';
-import type { AccountsBrowser, GitPending, ServerMessage, SessionInfo } from '../shared/protocol.ts';
+import type { AccountsBrowser, GitPending, PmSummary, ServerMessage, SessionInfo } from '../shared/protocol.ts';
 import type { CatalogProbe, ElicitationAnswer, LaunchOptions, PermissionAnswer, ProcessFactory, ProcessHandle, ProcessHandlers } from './claude-process.ts';
 import type { Config } from './config.ts';
 import { asJson } from './json.ts';
@@ -592,16 +592,21 @@ describe('a project manager\'s launch', () => {
 
 describe('a project manager\'s summary', () => {
   it('goes to the pages with its session, and never into sessions.json', async () => {
-    const summary = { items: 2, asks: 1, workers: 1, working: 0, line: 'yours' as const };
+    let summary: PmSummary = { items: 2, asks: 1, workers: 1, working: 0, line: 'yours' };
     const dataDir = path.join(base, `data-summary-${++counter}`);
-    const { manager, messages } = setup({}, dataDir, undefined, undefined, undefined, { pmSummary: () => summary });
+    const shown: string[] = [];
+    const { manager, messages } = setup({}, dataDir, undefined, undefined, undefined, { pmSummary: () => summary, onShown: (session) => shown.push(session.id) });
     await manager.init();
     const { id } = await manager.create({ cwd: projectA(), text: 'bonjour' }, { pm: true });
     const other = await manager.create({ cwd: projectA(), text: 'bonjour' });
-    const sent = messages.flatMap((message) => (message.t === 'session' ? [message.session] : []));
-    assert.deepEqual(sent.findLast((session) => session.id === id)?.pmSummary, summary);
-    assert.equal(sent.findLast((session) => session.id === other.id)?.pmSummary, undefined, 'only a PM has one');
+    const sent = () => messages.flatMap((message) => (message.t === 'session' ? [message.session] : []));
+    assert.deepEqual(sent().findLast((session) => session.id === id)?.pmSummary, summary);
+    assert.equal(sent().findLast((session) => session.id === other.id)?.pmSummary, undefined, 'only a PM has one');
+    assert.ok(shown.includes(other.id), 'each session sent is heard');
     assert.deepEqual(manager.forPages().find((session) => session.id === id)?.pmSummary, summary, 'for a page that connects');
+    summary = { ...summary, asks: 0, line: 'calm' };
+    manager.republish(id);
+    assert.deepEqual(sent().at(-1)?.pmSummary, summary, 'sent again, computed anew');
     await manager.shutdown();
     const stored = JSON.parse(readFileSync(path.join(dataDir, 'sessions.json'), 'utf8')).sessions;
     assert.ok(stored.some((session: SessionInfo) => session.id === id));
