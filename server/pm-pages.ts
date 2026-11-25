@@ -84,7 +84,7 @@ label:has(>input[type=checkbox],>input[type=radio]){display:flex;gap:.5em;align-
 input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),select,textarea{width:100%;padding:.5em .65em;font:inherit;color:inherit;background:var(--glass-tint,Field);border:1px solid var(--color-border-strong,ButtonBorder);border-radius:var(--radius-sm,8px)}
 textarea{min-height:5em;resize:vertical}
 input[type=checkbox],input[type=radio]{accent-color:var(--color-accent,AccentColor)}
-button,[data-answer]:not(input):not(select):not(textarea){display:inline-flex;align-items:center;gap:.4em;margin:0 .4em .4em 0;padding:.45em .9em;font:inherit;color:inherit;background:transparent;border:1px solid var(--color-border-strong,ButtonBorder);border-radius:var(--radius-sm,8px);cursor:pointer}
+button,[data-answer]:not(input):not(select):not(textarea){display:inline-flex;align-items:center;gap:.4em;margin:0 .4em .4em 0;padding:.45em .9em;font:inherit;color:inherit;background:var(--glass-tint,ButtonFace);border:1px solid var(--color-border-strong,ButtonBorder);border-radius:var(--radius-sm,8px);cursor:pointer}
 button:hover,[data-answer]:not(input):not(select):not(textarea):hover{border-color:var(--color-text-muted,GrayText)}
 [data-answer][aria-pressed=true]{background:var(--color-accent-soft,Highlight);border-color:var(--color-accent,AccentColor)}
 button[type=submit],[data-submit]{background:var(--color-accent,AccentColor);color:var(--color-accent-text,AccentColorText);border-color:transparent}
