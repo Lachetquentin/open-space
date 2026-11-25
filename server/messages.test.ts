@@ -31,12 +31,17 @@ describe('parseClientMessage', () => {
     assert.equal(parseClientMessage({ t: 'pmRevert', sessionId: '../x' }), null);
   });
 
-  it('reads the PMs a page looks at: session ids only, a few of them, each once', () => {
+  it('reads the PMs a page looks at: session ids only, each once', () => {
     assert.deepEqual(parseClientMessage({ t: 'pmWatch', pms: ['p1', 'p2', 'p1'] }), { t: 'pmWatch', pms: ['p1', 'p2'] });
     assert.deepEqual(parseClientMessage({ t: 'pmWatch', pms: [] }), { t: 'pmWatch', pms: [] }, 'none any more');
     assert.equal(parseClientMessage({ t: 'pmWatch', pms: ['../x'] }), null);
     assert.equal(parseClientMessage({ t: 'pmWatch', pms: 'p1' }), null);
-    assert.equal(parseClientMessage({ t: 'pmWatch', pms: Array.from({ length: 50 }, (_, index) => `p${index}`) }), null);
+  });
+
+  it('keeps the first PMs of a page that watches too many, each counted once', () => {
+    const many = ['p0', 'p0', ...Array.from({ length: 50 }, (_, index) => `p${index}`)];
+    const watched = parseClientMessage({ t: 'pmWatch', pms: many });
+    assert.deepEqual(watched, { t: 'pmWatch', pms: Array.from({ length: 16 }, (_, index) => `p${index}`) });
   });
 
   it('reads a change of a PM’s mission, instructions or memory within their limits', () => {

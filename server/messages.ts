@@ -202,9 +202,10 @@ function parseMemoryOp(raw: unknown): PmMemoryOp | null {
 /** The PM messages of the page; their guard (setting on, the session a PM) is the server's (server/pm-desk.ts). */
 function parsePmMessage(raw: Record<string, unknown>): ClientMessage | null {
   if (raw.t === 'pmWatch') {
-    if (!Array.isArray(raw.pms) || raw.pms.length > MAX_PM_WATCH) return null;
+    if (!Array.isArray(raw.pms)) return null;
     const pms = raw.pms.map(identifier);
-    return pms.every((pm) => pm !== null) ? { t: 'pmWatch', pms: [...new Set(pms as string[])] } : null;
+    // too many: the first ones are watched
+    return pms.every((pm) => pm !== null) ? { t: 'pmWatch', pms: [...new Set(pms as string[])].slice(0, MAX_PM_WATCH) } : null;
   }
   const pm = identifier(raw.pm);
   if (!pm) return null;
