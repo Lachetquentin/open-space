@@ -3,7 +3,7 @@ import type { ModInfo } from '../../shared/mods.ts';
 import { t } from '../i18n/index.ts';
 import { readPreference, writePreference } from '../lib/preferences.ts';
 import { modSlot } from '../state/docking.ts';
-import { MOD_HEAD, modBox, modPlacementKey as placementKey, NOT_PLACED, openingSpots, resizeMod, type ModPlacement } from '../state/mods.ts';
+import { MOD_HEAD, droppedPlacement, modBox, modPlacementKey as placementKey, NOT_PLACED, openingSpots, resizeMod, type ModPlacement } from '../state/mods.ts';
 import { outKey } from '../state/out.ts';
 import type { Box } from '../state/room-frame.ts';
 import { useSessions } from '../state/sessions.ts';
@@ -73,7 +73,7 @@ export function ModWindow({ mod, depth, spot, detached = false }: { mod: ModInfo
     drop: (edge) => {
       if (!moved) return;
       setMoved(null);
-      place({ ...placement, left: moved.left, top: moved.top, size: edge ? { width: moved.width, height: moved.height - MOD_HEAD } : placement.size });
+      place(droppedPlacement(placement, moved, edge));
     },
   });
   const ownBox = moved ?? box;

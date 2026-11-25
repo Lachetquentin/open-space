@@ -199,12 +199,12 @@ function parseMemoryOp(raw: unknown): PmMemoryOp | null {
   return null;
 }
 
-/** The PM messages of the page; their guard (setting on, the session a PM) is the server's (server/pm-desk.ts). */
 /** Whether a page's answers, once written as JSON, are within PM_LIMITS.pageAnswerBytes (too deep to write: no). */
 function answersFit(answers: unknown): boolean {
   try { return Buffer.byteLength(JSON.stringify(answers)) <= PM_LIMITS.pageAnswerBytes; } catch { return false; }
 }
 
+/** The PM messages of the page; their guard (setting on, the session a PM) is the server's (server/pm-desk.ts). */
 function parsePmMessage(raw: Record<string, unknown>): ClientMessage | null {
   if (raw.t === 'pmWatch') {
     if (!Array.isArray(raw.pms)) return null;

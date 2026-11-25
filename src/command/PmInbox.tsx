@@ -10,7 +10,7 @@ import type { PmDetail, SessionInfo } from '../../shared/protocol.ts';
 import { MAX_TIMER_MS } from '../../shared/timers.ts';
 import { t } from '../i18n/index.ts';
 import { resetLabel } from '../lib/format.ts';
-import { blockingAsks, inAnHour, type InboxRow, pmInbox, tomorrowMorning } from '../state/pm-inbox.ts';
+import { ANSWER_RETRY_MS, blockingAsks, inAnHour, type InboxRow, pmInbox, tomorrowMorning } from '../state/pm-inbox.ts';
 import { pmArchive, pmAskAction, usePmDetail } from '../state/usePmDetail.ts';
 import { openPmPage } from '../state/pm.ts';
 import { useSessions } from '../state/sessions.ts';
@@ -20,8 +20,6 @@ import { ActionMenu } from './ModWindows.tsx';
 import { WindowCompactContext } from './useWindowDrag.ts';
 import { usePhone } from '../lib/phone.ts';
 
-/** How long an answer sent waits for the plan to take its question away before the row can answer again. */
-const ANSWER_RETRY_MS = 5000;
 
 export function PmInbox({ session }: { session: SessionInfo }) {
   const detail = usePmDetail(session.pmSummary ? session.id : null);

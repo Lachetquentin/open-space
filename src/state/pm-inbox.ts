@@ -9,6 +9,8 @@ export type InboxRow = { kind: 'ask'; ask: PmAsk } | { kind: 'page'; page: PmPag
 
 /** How many rows the Inbox shows at most; the others are counted. */
 export const INBOX_ROWS = 4;
+/** How long an answer sent waits for the plan to take its question away (or say the page answered) before it can be sent again. */
+export const ANSWER_RETRY_MS = 5000;
 /** How many settled questions its "Traitées" drawer keeps, the latest first. */
 const SETTLED_SHOWN = 20;
 

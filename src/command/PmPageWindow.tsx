@@ -7,9 +7,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import type { PmPage } from '../../shared/pm.ts';
 import { t } from '../i18n/index.ts';
 import { readPreference, writePreference } from '../lib/preferences.ts';
-import { MOD_HEAD, modBox, NOT_PLACED, openingSpots, resizeMod, type ModPlacement } from '../state/mods.ts';
+import { droppedPlacement, modBox, NOT_PLACED, openingSpots, resizeMod, type ModPlacement } from '../state/mods.ts';
 import { pageSubmission, pageView, pmPageUrl, type PageView } from '../state/pm-pages.ts';
 import { closePmPage, openPmPage, usePmPageWindow } from '../state/pm.ts';
+import { ANSWER_RETRY_MS } from '../state/pm-inbox.ts';
 import type { Box } from '../state/room-frame.ts';
 import { useSessions } from '../state/sessions.ts';
 import { usePmDetail } from '../state/usePmDetail.ts';
@@ -27,8 +28,6 @@ const SIZE = { width: 520, height: 600 };
 const PLACEMENT = 'pm-page-placement';
 /** loaded without its kit saying it is there: the server did not serve the page (gone, the setting off) */
 const READY_GRACE_MS = 1500;
-/** how long answers sent wait for the plan to say the page answered before the page can send again (a refusal changes nothing) */
-const ANSWER_RETRY_MS = 5000;
 
 /** The live page open, if any. */
 export function PmPageWindow() {
@@ -59,7 +58,7 @@ function PageWindow({ pm, asked }: { pm: string; asked: string }) {
     drop: (edge) => {
       if (!moved) return;
       setMoved(null);
-      place({ ...placement, left: moved.left, top: moved.top, size: edge ? { width: moved.width, height: moved.height - MOD_HEAD } : placement.size });
+      place(droppedPlacement(placement, moved, edge));
     },
   });
   const shownBox = moved ?? box;

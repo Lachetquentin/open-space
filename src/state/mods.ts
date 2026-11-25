@@ -17,6 +17,9 @@ const STEP = 32;
 
 /** Where the user left a mod's window: `size` once they resized it (until then the mod's own size), folded to its title or not. */
 export interface ModPlacement { left: number | null; top: number | null; size: Size | null; folded: boolean }
+/** `placement` once the user dropped the window at `moved`: resized when they pulled an edge, only moved otherwise. */
+export const droppedPlacement = (placement: ModPlacement, moved: Box, edge: Edge | null): ModPlacement =>
+  ({ ...placement, left: moved.left, top: moved.top, size: edge ? { width: moved.width, height: moved.height - MOD_HEAD } : placement.size });
 export const NOT_PLACED: ModPlacement = { left: null, top: null, size: null, folded: false };
 /** where a mod's placement is kept in this browser */
 export const modPlacementKey = (id: string) => `mod-placement:${id}`;
