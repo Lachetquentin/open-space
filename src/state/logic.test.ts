@@ -777,19 +777,19 @@ describe('project managers in the page', () => {
       assert.deepEqual(inbox.settled.map((one) => one.no), [2, 1]);
     });
 
-    it('names a blocked task only when the question holding it is not listed, and what the last turn finished', () => {
+    it('keeps a snoozed blocking question in the snoozed drawer, not as a blocked task, and names what the last turn finished', () => {
       const inbox = pmInbox(detail({
         turn: 5,
         items: [item(1), item(2), item(3, { state: 'finished', touchedTurn: 4 }), item(4, { state: 'finished', touchedTurn: 3 }), item(5, { state: 'finished', touchedTurn: 5, archived: true })],
         asks: [ask(1, { item: 1, holds: true }), ask(2, { item: 2, holds: true, snoozedUntil: 99 })],
       }), 0);
-      assert.deepEqual(rows(inbox), ['Q1', 'blocked:W2', 'finished:W3']);
+      assert.deepEqual([rows(inbox), inbox.snoozed.map((one) => one.no)], [['Q1', 'finished:W3'], [2]]);
       assert.deepEqual(inbox.closed.map((one) => one.no), [3, 4], 'its drawer: every finished task not archived, from any turn');
     });
 
     it('shows four rows at most, questions first, and counts the others', () => {
       const inbox = pmInbox(detail({ turn: 1, items: [item(1, { state: 'finished', touchedTurn: 1 })], asks: [ask(4), ask(3), ask(2), ask(1)] }), 0);
-      assert.deepEqual([rows(inbox), inbox.more, inbox.counts], [['Q1', 'Q2', 'Q3', 'Q4'], 1, { asks: 4, pages: 0, blocked: 0, finished: 1 }]);
+      assert.deepEqual([rows(inbox), inbox.more, inbox.counts], [['Q1', 'Q2', 'Q3', 'Q4'], 1, { asks: 4, pages: 0, finished: 1 }]);
     });
 
     it('lists an open page that asks questions after the questions, and no page that asks none or is settled', () => {

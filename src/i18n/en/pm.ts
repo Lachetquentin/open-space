@@ -61,12 +61,10 @@ export const pm: Dictionary['pm'] = {
   },
   inbox: {
     label: 'To decide',
-    blocked: (count: number) => plural(count, 'blocked task', 'blocked tasks'),
     finished: (count: number) => plural(count, 'finished task', 'finished tasks'),
     pages: (count: number) => plural(count, 'page to fill in', 'pages to fill in'),
     nothing: 'Nothing to decide',
     more: (count: number) => `and ${count} more`,
-    blockedBy: (tags: string) => `Blocked by ${tags}`,
     done: 'Finished',
     typeAnswer: 'Your answer',
     answerLabel: (tag: string) => `Your answer to ${tag}`,

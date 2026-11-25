@@ -1,16 +1,15 @@
 // A PM's Inbox, above its message field next to PendingStrip: the questions of its plan waiting for the user (their
 // answers as buttons, the recommended one marked; a field when it proposes none), its live pages to fill (opened in their
-// window, PmPageWindow), the tasks they block, what its last
-// turn finished; the snoozed and settled questions and the closed tasks in three drawers; a question shown where it was
+// window, PmPageWindow), what its last turn finished; the snoozed and settled questions and the closed tasks in three drawers; a question shown where it was
 // asked in the conversation (ShowInFeedContext). Shown while the server sends the PM's summary (the PM setting on), drawn
 // from the plan it sends (usePmDetail) and nothing else: an answer taken leaves when the plan comes back.
 import { use, useEffect, useRef, useState } from 'react';
 import { fullAskTag, itemTag, type PmAsk, type PmItem, type PmPage } from '../../shared/pm.ts';
-import type { PmDetail, SessionInfo } from '../../shared/protocol.ts';
+import type { SessionInfo } from '../../shared/protocol.ts';
 import { MAX_TIMER_MS } from '../../shared/timers.ts';
 import { t } from '../i18n/index.ts';
 import { resetLabel } from '../lib/format.ts';
-import { ANSWER_RETRY_MS, blockingAsks, inAnHour, type InboxRow, pmInbox, tomorrowMorning } from '../state/pm-inbox.ts';
+import { ANSWER_RETRY_MS, inAnHour, type InboxRow, pmInbox, tomorrowMorning } from '../state/pm-inbox.ts';
 import { pmArchive, pmAskAction, usePmDetail } from '../state/usePmDetail.ts';
 import { openPmPage } from '../state/pm.ts';
 import { useSessions } from '../state/sessions.ts';
@@ -44,7 +43,6 @@ export function PmInbox({ session }: { session: SessionInfo }) {
   const counts = [
     inbox.counts.asks ? t.pm.counts.asks(inbox.counts.asks) : '',
     inbox.counts.pages ? words.pages(inbox.counts.pages) : '',
-    inbox.counts.blocked ? words.blocked(inbox.counts.blocked) : '',
     inbox.counts.finished ? words.finished(inbox.counts.finished) : '',
   ].filter(Boolean).join(' · ') || words.nothing;
   return (
@@ -57,7 +55,7 @@ export function PmInbox({ session }: { session: SessionInfo }) {
       {!folded && (
         <>
           <ul className="cp-pm-inbox__list">
-            {inbox.rows.map((row) => <Row key={rowKey(row)} pm={session.id} row={row} detail={detail} />)}
+            {inbox.rows.map((row) => <Row key={rowKey(row)} pm={session.id} row={row} />)}
           </ul>
           {inbox.more > 0 && <p className="cp-pm-inbox__more">{words.more(inbox.more)}</p>}
           {(inbox.snoozed.length > 0 || inbox.settled.length > 0 || inbox.closed.length > 0) && (
@@ -84,22 +82,22 @@ export function PmInbox({ session }: { session: SessionInfo }) {
 
 const rowKey = (row: InboxRow) => (row.kind === 'ask' ? `ask:${row.ask.no}` : row.kind === 'page' ? `page:${row.page.id}` : `${row.kind}:${row.item.no}`);
 
-function Row({ pm, row, detail }: { pm: string; row: InboxRow; detail: PmDetail }) {
+function Row({ pm, row }: { pm: string; row: InboxRow }) {
   if (row.kind === 'ask') return <AskRow pm={pm} ask={row.ask} />;
   if (row.kind === 'page') return <PageRow pm={pm} page={row.page} />;
-  return <ItemRow item={row.item} note={row.kind === 'blocked' ? t.pm.inbox.blockedBy(blockingAsks(detail, row.item).map((ask) => fullAskTag(ask)).join(', ')) : row.item.done || t.pm.inbox.done} kind={row.kind} />;
+  return <FinishedRow item={row.item} />;
 }
 
-/** A task: blocked by a question snoozed, or finished during the PM's last turn. */
-function ItemRow({ item, note, kind }: { item: PmItem; note: string; kind: 'blocked' | 'finished' }) {
+/** A task finished during the PM's last turn. */
+function FinishedRow({ item }: { item: PmItem }) {
   return (
-    <li className="cp-pm-inbox__row" data-kind={kind}>
+    <li className="cp-pm-inbox__row" data-kind="finished">
       <p className="cp-pm-inbox__line">
         <span className="cp-pm-inbox__tag">{itemTag(item.no)}</span>
         <span className="cp-pm-inbox__text">{item.title}</span>
-        {kind === 'finished' && <CheckIcon />}
+        <CheckIcon />
       </p>
-      <p className="cp-pm-inbox__note">{note}</p>
+      <p className="cp-pm-inbox__note">{item.done || t.pm.inbox.done}</p>
     </li>
   );
 }

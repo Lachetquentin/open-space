@@ -195,7 +195,7 @@ export function PmProject({ pm, folded, onFold }: { pm: SessionInfo; folded: boo
               <span className="cp-pm__label">{words.instructions}</span>
               <EditableText label={words.instructions} value={detail.instructions} empty={words.noInstructions} max={PM_LIMITS.instructions} lines onSave={(instructions) => pmEdit(pm.id, { instructions })} />
             </div>
-            {itemSections(detail).map(({ section, items }) => fold(
+            {itemSections(detail, Date.now()).map(({ section, items }) => fold(
               section, words.sections[section], items.length,
               <ul className="cp-pm__tasks">{items.map((item) => <Task key={item.no} item={item} detail={detail} />)}</ul>,
               sectionOpen(section),

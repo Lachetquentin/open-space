@@ -281,11 +281,15 @@ export function openWaits(item: PmItem, file: PmFile): PmWait[] {
   });
 }
 
-/** The status shown for a task: the first rule that applies, in this order. */
-export function itemStatus(item: PmItem, file: PmFile, live: readonly WorkerLive[]): ShownStatus {
+/**
+ * The status shown for a task: the first rule that applies, in this order. A question that holds it blocks it while open;
+ * at `now` (what the user sees), not while the user has it snoozed. Without `now` (the PM's own view), a snooze changes nothing.
+ */
+export function itemStatus(item: PmItem, file: PmFile, live: readonly WorkerLive[], now?: number): ShownStatus {
   if (item.state === 'dropped') return 'dropped';
   if (item.state === 'finished') return 'done';
-  if (file.asks.some((ask) => ask.item === item.no && ask.holds && ask.state === 'open')) return 'blocked';
+  const holds = (ask: PmAsk) => ask.item === item.no && ask.holds && ask.state === 'open' && (now === undefined || !snoozed(ask, now));
+  if (file.asks.some(holds)) return 'blocked';
   const workers = file.workers.filter((worker) => worker.item === item.no && !worker.resolvedAt)
     .flatMap((worker) => live.filter((one) => one.session === worker.session));
   if (workers.some((one) => one.waiting)) return 'needsYou';
@@ -352,7 +356,7 @@ export function pmSummary(file: PmFile, live: readonly WorkerLive[], now: number
   const workers = file.workers.filter((worker) => !worker.resolvedAt);
   const mine = live.filter((one) => workers.some((worker) => worker.session === one.session));
   const working = mine.filter((one) => one.working).length;
-  const blocked = open.some((item) => itemStatus(item, file, live) === 'blocked');
+  const blocked = open.some((item) => itemStatus(item, file, live, now) === 'blocked');
   const line: PmLine = blocked ? 'blocked' : asks.open.length || mine.some((one) => one.waiting) ? 'yours' : working ? 'working' : 'calm';
   const wakes = asks.snoozed.map((ask) => ask.snoozedUntil ?? 0);
   return { items: open.length, asks: asks.open.length, workers: workers.length, working, line, ...(wakes.length ? { nextWake: Math.min(...wakes) } : {}) };

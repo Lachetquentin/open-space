@@ -14,6 +14,6 @@ describe('a PM’s tasks in the status panel', () => {
       items: [item(1, { state: 'finished' }), item(2, { touchedTurn: 5 }), item(3, { state: 'dropped' }), item(4, { state: 'finished', archived: true }), item(5)],
       asks: [{ no: 1, item: 5, title: 'Which?', detail: '', answers: [], holds: true, state: 'open', createdAt: 1 }],
     };
-    assert.deepEqual(itemSections(detail).map(({ section, items }) => [section, items.map((one) => one.no)]), [['blocked', [5]], ['inProgress', [2]], ['done', [1, 3]]]);
+    assert.deepEqual(itemSections(detail, 0).map(({ section, items }) => [section, items.map((one) => one.no)]), [['blocked', [5]], ['inProgress', [2]], ['done', [1, 3]]]);
   });
 });
