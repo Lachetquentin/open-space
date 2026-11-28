@@ -23,6 +23,18 @@ export function isolationOffer(mode: IsolateMode, repo: FolderRepo | null | unde
   return { shown: taken > 0, checked: taken > 0 && mode === 'busy' };
 }
 
+/**
+ * The branch the user chose to go on with (in this folder), while the server still offers it; `gone` is that branch when it
+ * was chosen and is no longer offered (taken by another session, cleaned): the launcher then starts a new worktree and says so.
+ * Nothing is lost while the folder's repository is not known yet, nor while the session is not isolated.
+ */
+export function reuseChoice(
+  reuse: { cwd: string; branch: string } | null, cwd: string, isolated: boolean, repo: Pick<FolderRepo, 'reusable'> | null | undefined,
+): { branch: string | null; gone: string | null } {
+  if (!reuse || reuse.cwd !== cwd || !isolated || !repo) return { branch: null, gone: null };
+  return repo.reusable?.some((one) => one.branch === reuse.branch) ? { branch: reuse.branch, gone: null } : { branch: null, gone: reuse.branch };
+}
+
 /** The branch a new session would get, as the server will name it (before a suffix if it is taken). */
 export const branchPreview = (name: string, about: string) => worktreeNames(name, about).branch;
 

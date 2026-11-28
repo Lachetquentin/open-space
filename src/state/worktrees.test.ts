@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { BranchRow, BranchStatus, FolderRepo, SessionInfo, SessionState, WorktreeInfo } from '../../shared/protocol.ts';
-import { asksBeforeSwitchingOff, branchCard, branchLines, branchPreview, branchSignature, checkedByDefault, isolationOffer, keyOf, loss, occupants, shownFolder } from './worktrees.ts';
+import { asksBeforeSwitchingOff, branchCard, branchLines, branchPreview, branchSignature, checkedByDefault, isolationOffer, keyOf, loss, occupants, reuseChoice, shownFolder } from './worktrees.ts';
 
 const session = (id: string, state: SessionState, extra: Partial<SessionInfo> = {}): SessionInfo => ({
   id, name: id, cwd: '/work/garden', model: '', activeModel: '', permissionMode: 'auto', state, stateSince: 1000, createdAt: 0, turns: 1, permissions: [],
@@ -91,5 +91,25 @@ describe('the cleaning panel', () => {
     const [line] = branchLines([row('worktree-spike', { folder: '/w/spike', claude: true, inUse: true })], []);
     assert.equal(line.locked, true);
     assert.equal(checkedByDefault([line]).size, 0);
+  });
+});
+
+describe('going on with a kept branch', () => {
+  const kept: FolderRepo = { ...repo, reusable: [{ branch: 'os/lina-pay', base: 'main', at: 1 }] };
+  const chose = { cwd: '/work/garden', branch: 'os/lina-pay' };
+
+  it('keeps the chosen branch while the folder still offers it', () => {
+    assert.deepEqual(reuseChoice(chose, '/work/garden', true, kept), { branch: 'os/lina-pay', gone: null });
+  });
+
+  it('reports the branch that is no longer offered, so the launcher can say it starts a new worktree', () => {
+    assert.deepEqual(reuseChoice(chose, '/work/garden', true, repo), { branch: null, gone: 'os/lina-pay' });
+  });
+
+  it('says nothing for another folder, a shared checkout, or a repository not known yet', () => {
+    const none = { branch: null, gone: null };
+    assert.deepEqual(reuseChoice(chose, '/work/other', true, repo), none);
+    assert.deepEqual(reuseChoice(chose, '/work/garden', false, repo), none);
+    assert.deepEqual(reuseChoice(chose, '/work/garden', true, undefined), none);
   });
 });

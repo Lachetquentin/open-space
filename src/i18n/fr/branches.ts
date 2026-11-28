@@ -14,6 +14,13 @@ export const branches = {
     changeTitle: 'Partir d’une autre branche',
     base: 'Partir de',
     dirty: (count: number, folder: string) => (count === 1 ? `Le fichier non commité de ${folder} reste dans ${folder}.` : `Les ${count} fichiers non commités de ${folder} restent dans ${folder}.`),
+    /** the classic line, when going on with a kept branch instead of starting a new one */
+    reuses: (name: string | null) => `${name ?? 'La session'} reprend`,
+    reuse: 'ou reprendre une branche gardée',
+    reuseTitle: 'Reprendre une branche gardée, ou un worktree où aucune session ne travaille',
+    reuseOff: 'ou nouvelle branche',
+    /** the branch chosen to go on with is no longer offered: a new worktree is started instead */
+    gone: (branch: string) => `La branche ${branch} n’est plus disponible : nouveau worktree à la place.`,
     tidy: (count: number, repo: string) => `${count} branches fusionnées traînent dans ${repo}.`,
     tidyAction: 'Faire le ménage',
   },

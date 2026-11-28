@@ -6,7 +6,7 @@ import { availability, stillFree } from '../state/availability.ts';
 import { useProjects } from '../state/useProjects.ts';
 import { useSessions } from '../state/sessions.ts';
 import { LAUNCHER_DRAFT, readDraft, writeDraft } from '../state/drafts.ts';
-import { branchPreview, isolationOffer, occupants } from '../state/worktrees.ts';
+import { branchPreview, isolationOffer, occupants, reuseChoice } from '../state/worktrees.ts';
 import { BranchName } from './BranchCard.tsx';
 import { Switch } from './Switch.tsx';
 import { AttachButton, AttachmentStrip, DropOverlay } from './Attachments.tsx';
@@ -94,17 +94,19 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
   const canIsolate = !resuming && !!repo?.branch;
   const isolated = canIsolate && (isolateChoice?.cwd === cwd ? isolateChoice.isolated : offer.checked);
   const startBase = base?.cwd === cwd && repo?.branches.includes(base.branch) ? base.branch : repo?.branch ?? '';
-  const chooseIsolated = (next: boolean) => setIsolateChoice({ cwd, isolated: next });
-  // the centered launcher's "Previous worktree": a branch of the folder to go on with, while the server still offers it
+  // a branch of the folder to go on with ("Previous worktree" / "or go on with a kept branch"), while the server still offers it
   const [reuse, setReuse] = useState<{ cwd: string; branch: string } | null>(null);
   const reusable = repo?.reusable ?? [];
   const centered = preferences.launcherStyle === 'centered';
-  const reused = centered && isolated && reuse?.cwd === cwd && reusable.some((one) => one.branch === reuse.branch) ? reuse.branch : null;
+  // any new choice of workspace forgets the branch that is gone (and its notice)
+  const chooseIsolated = (next: boolean) => { setIsolateChoice({ cwd, isolated: next }); if (!next) setReuse(null); };
+  const { branch: reused, gone } = reuseChoice(reuse, cwd, isolated, repo);
   const workspace: Workspace = !isolated ? 'checkout' : reused ? 'existing' : 'new';
   const chooseWorkspace = (next: Workspace) => {
     chooseIsolated(next !== 'checkout');
     setReuse(next === 'existing' && reusable[0] ? { cwd, branch: reusable[0].branch } : null);
   };
+  const goneNote = gone && <p className="cp-launcher__note" role="status">{t.branches.launcher.gone(gone)}</p>;
 
   useEffect(() => { if (live) send({ t: 'directories' }); }, [live, send]);
 
@@ -231,6 +233,7 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
                 />
               </span>
             </div>
+            {goneNote}
             {repo && isolated && repo.dirty > 0 && <p className="cp-launcher__note">{branchWords.dirty(repo.dirty, folderName(repo.root))}</p>}
             {tidyLine}
           </form>
@@ -272,7 +275,16 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
               <strong className="cp-isolate__title">{branchWords.title}</strong>
               <p>
                 {taken.length ? branchWords.busy(taken[0].name, taken.length - 1, folderName(repo.root)) : branchWords.alone}
-                {isolated && (
+                {isolated && (reused ? (
+                  <> {branchWords.reuses(person)}{' '}
+                    <span className="cp-chip" data-select>
+                      <select aria-label={words.reusedBranch} value={reused} onChange={(e) => setReuse({ cwd, branch: e.target.value })}>
+                        {reusable.map((one) => <option key={one.branch} value={one.branch}>{reusableLabel(one)}</option>)}
+                      </select>
+                    </span>
+                    . <button type="button" className="cp-link" onClick={() => setReuse(null)}>{branchWords.reuseOff}</button>
+                  </>
+                ) : (
                   <> {branchWords.startsOn(person)} <BranchName name={preview} />{branchWords.from}{' '}
                     {choosingBase ? (
                       <span className="cp-chip" data-select>
@@ -282,9 +294,11 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
                       </span>
                     ) : <BranchName name={startBase} />}
                     .{repo.branches.length > 1 && !choosingBase && <> <button type="button" className="cp-link" title={branchWords.changeTitle} onClick={() => setChoosingBase(true)}>{branchWords.change}</button></>}
+                    {reusable.length > 0 && !choosingBase && <> <button type="button" className="cp-link" title={branchWords.reuseTitle} onClick={() => setReuse({ cwd, branch: reusable[0].branch })}>{branchWords.reuse}</button></>}
                   </>
-                )}
+                ))}
               </p>
+              {goneNote}
               {isolated && repo.dirty > 0 && <p className="cp-isolate__dirty">{branchWords.dirty(repo.dirty, folderName(repo.root))}</p>}
             </div>
             <Switch checked={isolated} onChange={chooseIsolated} label={branchWords.title} />
