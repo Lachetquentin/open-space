@@ -2279,6 +2279,8 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 .cp-prefs__banner strong { font-size: var(--text-sm); font-weight: var(--weight-medium); }
 .cp-prefs__banner-icon { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--radius-sm); background: var(--color-accent-soft); color: var(--color-accent); }
 .cp-header__settings { position: relative; }
+/* the crew's shortcut gives way first on a narrow window, so the settings stay on screen */
+@media (max-width: 30rem) { .cp-header__crew { display: none; } }
 .cp-header__settings[data-alert='true']::after { content: ''; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--tone-error); box-shadow: 0 0 0 2px var(--color-bg); }
 @media (max-width: 40rem) {
   .cp-prefs__banner { grid-template-columns: auto minmax(0, 1fr); }

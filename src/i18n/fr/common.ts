@@ -49,6 +49,7 @@ export const common = {
     commands: 'Commandes',
     search: 'Rechercher',
     searchTitle: 'Sessions, messages, commandes et réglages',
+    crew: 'Équipe',
     settings: 'Réglages',
     settingsTitle: (keys: string) => `Réglages (${keys})`,
     settingsUpdate: 'Réglages : une nouvelle version de Claude Code est installée',

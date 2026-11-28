@@ -51,6 +51,7 @@ export const common: Dictionary['common'] = {
     commands: 'Commands',
     search: 'Search',
     searchTitle: 'Sessions, messages, commands and settings',
+    crew: 'Crew',
     settings: 'Settings',
     settingsTitle: (keys: string) => `Settings (${keys})`,
     settingsUpdate: 'Settings: a new version of Claude Code is installed',

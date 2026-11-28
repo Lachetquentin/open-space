@@ -7,7 +7,7 @@ import { roomSessions, type RoomKind } from '../room/cast.ts';
 import { seatedRuns } from '../state/automata.ts';
 import { selectOutdatedCount, useSessions, type View } from '../state/sessions.ts';
 import { useProjects } from '../state/useProjects.ts';
-import { AutomatonIcon, DashboardIcon, DeskIcon, FocusIcon, SearchIcon, SettingsIcon, SofaIcon } from './Icons.tsx';
+import { AutomatonIcon, CrewIcon, DashboardIcon, DeskIcon, FocusIcon, SearchIcon, SettingsIcon, SofaIcon } from './Icons.tsx';
 import { ModsButton } from './ModsPanel.tsx';
 import { QuotaMeter } from './QuotaMeter.tsx';
 import { Radio } from './Radio.tsx';
@@ -29,6 +29,7 @@ export function Header() {
   const connection = useSessions((s) => s.connection);
   const openPalette = useSessions((s) => s.openPalette);
   const openSettings = useSessions((s) => s.openSettings);
+  const openCrew = useSessions((s) => s.openCrew);
   // off in the settings, the radio leaves its room to the rest
   const radio = useSessions((s) => s.preferences.radio !== false);
   const automata = useSessions((s) => s.automata);
@@ -86,6 +87,12 @@ export function Header() {
         <Tooltip text={words.searchTitle}>
           <button type="button" className="cp-button cp-header__search" data-variant="quiet" onClick={() => openPalette(true)} aria-label={words.search}>
             <SearchIcon /><kbd className="cp-kbd">{PALETTE_KEYS}</kbd>
+          </button>
+        </Tooltip>
+        {/* a quick way to the crew; hidden when the bar is too narrow for it (components.css), the settings still lead to it */}
+        <Tooltip text={t.settings.prefs.rows.crew.title}>
+          <button type="button" className="cp-icon-button cp-header__crew" onClick={() => openCrew(true)} aria-label={words.crew}>
+            <CrewIcon />
           </button>
         </Tooltip>
         <Tooltip text={appReady ? words.settingsAppUpdate : outdated ? words.settingsUpdate : words.settingsTitle(SETTINGS_KEYS)}>
