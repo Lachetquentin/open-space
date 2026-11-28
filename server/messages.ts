@@ -139,7 +139,10 @@ function parseOptions(raw: unknown): SessionOptions | null {
   if (options.isolate !== undefined) {
     const base = isJson(options.isolate) ? options.isolate.base : null;
     if (base !== undefined && !isBranchName(base)) return null;
-    result.isolate = base ? { base: base as string } : {};
+    // a branch to go on with: neither from a base nor with a conversation of its own (which has its branch, see keptBranchOf)
+    const branch = isJson(options.isolate) ? options.isolate.branch : undefined;
+    if (branch !== undefined && (!isBranchName(branch) || base !== undefined || result.resumeId)) return null;
+    result.isolate = branch ? { branch } : base ? { base: base as string } : {};
   }
   return result;
 }

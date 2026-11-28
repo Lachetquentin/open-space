@@ -37,7 +37,7 @@ export const MCP_SERVER = MCP_SERVER_NAME;
 export const MCP_SETTINGS = [
   'language', 'theme', 'pet', 'festivals', 'officeLife', 'notifications', 'autoTag', 'autoTagRule', 'remoteByDefault', 'model', 'effort',
   'idleCompact', 'timeFormat', 'timestamps', 'turnDuration', 'detailedActions', 'reduceMotion', 'glassOpacity', 'windowStyle', 'tagColors',
-  'copyOnSelect', 'autoPip', 'agentCursor',
+  'copyOnSelect', 'autoPip', 'agentCursor', 'launcherStyle', 'projects',
 ] as const satisfies readonly (keyof Preferences)[];
 
 /** A session's key to the MCP server, from Open Space's secret. */

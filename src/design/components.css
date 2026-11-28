@@ -59,6 +59,8 @@ h1, h2, p { margin: 0; }
 .cp-header__projects { flex: 0 1 auto; min-width: 8rem; max-width: 20rem; overflow-x: auto; scrollbar-width: none; }
 .cp-header__projects .cp-segmented { flex: none; }
 .cp-header__projects .cp-segmented button { display: inline-flex; align-items: center; gap: var(--space-1); padding-inline: var(--space-3); white-space: nowrap; }
+.cp-header__project-empty { color: var(--color-text-muted); }
+.cp-header__project-empty .cp-icon { width: 0.75em; height: 0.75em; opacity: 0.7; }
 .cp-header__room-count[data-waiting='true'] { color: var(--tone-permission); font-weight: var(--weight-bold); }
 /* between the two rooms and focus mode: two ways of looking, not three rooms. Same margins whichever is pressed, so the pill keeps its width. */
 .cp-header__divider { align-self: center; flex: none; width: var(--border-width); height: 1rem; margin: 0 var(--space-1); background: var(--glass-edge); }
@@ -1717,6 +1719,105 @@ button.cp-tag:hover { border-color: var(--color-accent); }
   .cp-launcher__send { width: 2rem; padding: 0; justify-content: center; }
   .cp-launcher__send-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+/*
+ * The centered launcher (Preferences.launcherStyle): a question in the middle of the column, the field under it, and
+ * its options in small chips under the field. The same parts as the classic launcher, laid out otherwise.
+ */
+.cp-launcher[data-style='centered'] { justify-content: center; overflow-y: auto; }
+.cp-launcher[data-style='centered'] > .cp-launcher__center {
+  container: launcher-center / inline-size;
+  width: min(100%, 47.5rem); margin-inline: auto; display: grid; gap: var(--space-4); padding: var(--space-6) var(--space-4) var(--space-4);
+}
+.cp-launcher[data-style='centered'] .cp-launcher__close { top: var(--space-3); translate: none; }
+.cp-launcher__hero { display: grid; justify-items: center; gap: var(--space-2); text-align: center; }
+.cp-launcher__hero h2 { font-size: clamp(var(--text-lg), 4.5cqi, 1.875rem); font-weight: var(--weight-medium); line-height: 1.25; text-wrap: balance; overflow-wrap: anywhere; }
+.cp-launcher__hero h2 strong { color: var(--color-accent); font-weight: var(--weight-bold); }
+.cp-launcher__hero p { font-size: var(--text-sm); }
+.cp-link.cp-launcher__pick { color: var(--color-text-muted); font-size: var(--text-sm); text-decoration-color: transparent; }
+.cp-link.cp-launcher__pick:hover { color: var(--color-text); text-decoration-color: currentColor; }
+.cp-launcher[data-style='centered'] .cp-resume__list { max-height: min(16rem, 36vh); }
+.cp-launcher[data-style='centered'] .cp-launcher__composer { display: grid; gap: var(--space-2); padding: 0; }
+.cp-launcher[data-style='centered'] .cp-launcher__box { padding: var(--space-3); }
+/* in the field's frame: attach on the left, the model, the person and a round send button on the right */
+.cp-launcher[data-style='centered'] .cp-launcher__attach { margin-right: auto; }
+.cp-launcher[data-style='centered'] .cp-launcher__send { margin-left: 0; width: 2rem; padding: 0; justify-content: center; }
+.cp-launcher[data-style='centered'] .cp-launcher__options :is(.cp-tune__panel, .cp-person__panel) { left: auto; right: 0; }
+/* under the frame, one row of ghost chips that wraps: where it works on the left, where it starts from and its permissions on the right */
+.cp-launcher__chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.cp-launcher__chips-end { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1) var(--space-2); min-width: 0; }
+.cp-launcher__chip {
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; max-width: 100%; height: 1.75rem; padding: 0 var(--space-2);
+  border: var(--border-width) solid transparent; border-radius: 999px; background: none; color: var(--color-text-muted); font-size: var(--text-xs); white-space: nowrap; cursor: pointer;
+  transition: background var(--duration) var(--easing), color var(--duration) var(--easing);
+}
+.cp-launcher__chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cp-launcher__chip .cp-icon { flex: none; width: 0.875rem; height: 0.875rem; }
+.cp-launcher__chip:hover, .cp-launcher__chip[aria-expanded='true'] { background: var(--color-surface); color: var(--color-text); }
+.cp-launcher__chip[aria-pressed='true'] { background: var(--color-accent-soft); color: var(--color-accent); }
+.cp-launcher__chip:has(> select:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+/* the browser's own list, laid over its chip: the chip shows the choice, a click anywhere on it opens the list */
+.cp-launcher__chip > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; appearance: none; cursor: pointer; }
+.cp-launcher__workspace { position: relative; display: flex; min-width: 0; }
+.cp-detail__menu.cp-launcher__menu { position: absolute; inset: auto auto calc(100% + var(--space-1)) 0; z-index: 20; min-width: 13rem; }
+.cp-launcher__menu-title { margin: 0; padding: var(--space-1) var(--space-2); font-size: var(--text-xs); color: var(--color-text-muted); }
+.cp-launcher__menu button[aria-checked='true'] { color: var(--color-accent); }
+/* the folder, a ghost chip like the others, which the line under the question puts the cursor in */
+.cp-launcher__folder { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; padding-left: var(--space-2); color: var(--color-text-muted); }
+.cp-launcher__folder > .cp-icon { flex: none; width: 0.875rem; height: 0.875rem; }
+.cp-launcher__folder > .cp-chip[data-folder] { flex: 0 1 12rem; }
+.cp-launcher__folder .cp-chip input:not([type='checkbox']) { height: 1.75rem; padding: 0 var(--space-2) 0 var(--space-1); border-color: transparent; background: none; color: var(--color-text-muted); font-size: var(--text-xs); }
+.cp-launcher__folder .cp-chip input:is(:hover, :focus) { border-color: transparent; background: var(--color-surface); color: var(--color-text); }
+.cp-launcher__note { margin: 0; font-size: var(--text-xs); color: var(--color-text-muted); }
+.cp-launcher[data-style='centered'] .cp-launcher__tidy { margin: 0; }
+/* the centered launcher's projects (ProjectPicker.tsx): the name in the question opens them under it */
+.cp-project-picker { position: relative; display: grid; justify-items: center; }
+.cp-project-picker__trigger {
+  display: inline-flex; align-items: center; gap: 0.15em; padding: 0 0.15em; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-accent); font: inherit; cursor: pointer;
+  transition: background var(--duration) var(--easing);
+}
+.cp-project-picker__trigger:hover, .cp-project-picker__trigger[aria-expanded='true'] { background: var(--color-accent-soft); }
+.cp-project-picker__trigger .cp-icon { flex: none; width: 0.6em; height: 0.6em; }
+.cp-project-picker__panel {
+  position: absolute; z-index: 20; top: calc(100% + var(--space-2)); left: 50%; translate: -50% 0; width: min(26rem, 100cqi); display: grid; gap: var(--space-1); padding: var(--space-2); text-align: left;
+  background: var(--glass-strong); border: var(--border-width) solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--glass-shadow);
+}
+.cp-project-picker__search {
+  height: 2rem; padding: 0 var(--space-3); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md);
+  background: var(--color-surface-sunken); color: var(--color-text); font-size: var(--text-sm);
+}
+.cp-project-picker__search:focus-visible { outline: none; border-color: var(--color-accent); }
+.cp-project-picker__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: min(18rem, 40vh); overflow-y: auto; overscroll-behavior: contain; }
+.cp-project-picker__option {
+  display: grid; grid-template-columns: 1.5rem minmax(0, max-content) minmax(0, 1fr) auto; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2); border-radius: var(--radius-sm); font-size: var(--text-sm); cursor: pointer;
+}
+.cp-project-picker__option[aria-selected='true'] { background: var(--color-surface); }
+.cp-project-picker__initial {
+  display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: var(--radius-sm); background: var(--color-surface-raised);
+  color: var(--color-text-muted); font-size: var(--text-xs); font-weight: var(--weight-bold);
+}
+.cp-project-picker__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--weight-medium); color: var(--color-text); }
+.cp-project-picker__folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--color-text-muted); }
+.cp-project-picker__option[data-disabled] { cursor: not-allowed; }
+.cp-project-picker__option[data-disabled] :is(.cp-project-picker__name, .cp-project-picker__initial, .cp-project-picker__folder) { color: var(--color-text-muted); opacity: 0.6; }
+.cp-prefs__projects .cp-prefs__outside { font-size: var(--text-xs); }
+.cp-project-picker__option[data-current] :is(.cp-project-picker__name, .cp-project-picker__initial) { color: var(--color-accent); }
+.cp-project-picker__option[data-current] .cp-project-picker__initial { background: var(--color-accent-soft); }
+/* the pin shows on the project pointed at, and stays on a pinned one */
+.cp-project-picker__pin { opacity: 0; transition: opacity var(--duration) var(--easing); }
+.cp-project-picker__option:is(:hover, [aria-selected='true']) .cp-project-picker__pin, .cp-project-picker__pin:is([aria-pressed='true'], :focus-visible) { opacity: 1; }
+.cp-project-picker__pin[aria-pressed='true'] { color: var(--color-accent); }
+.cp-project-picker__empty { padding: var(--space-2); font-size: var(--text-sm); }
+.cp-project-picker__add {
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 0; border-top: var(--border-width) solid var(--color-border);
+  background: none; color: var(--color-text-muted); font-size: var(--text-sm); text-align: left;
+}
+.cp-project-picker__add:hover, .cp-project-picker__add:focus-visible { color: var(--color-text); }
+.cp-project-picker__adding { display: flex; align-items: center; gap: var(--space-2); padding-top: var(--space-2); border-top: var(--border-width) solid var(--color-border); }
+.cp-project-picker__adding > .cp-folder { flex: 1; min-width: 0; }
+@media (max-width: 60rem) {
+  .cp-launcher[data-style='centered'] > .cp-launcher__center { gap: var(--space-2); padding: var(--space-3) var(--space-2) var(--space-2); }
+}
 /* who takes the session: a face in a chip, the crew in a panel above it (the launcher sits at the bottom) */
 .cp-person { position: relative; flex: none; }
 .cp-person__trigger {
@@ -2300,6 +2401,10 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 .cp-prefs__row[data-wide='true'] .cp-prefs__row-control { grid-column: 2 / -1; display: grid; justify-content: stretch; }
 .cp-prefs__row[data-wide='true'] .cp-prefs__row-control > input { width: 100%; height: var(--control-height); padding-block: 0; }
 .cp-prefs__row .cp-onboarding__folders { margin: 0; }
+/* the saved projects (Preferences.projects): their folder, then unpin and remove */
+.cp-prefs__projects li { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3); border-radius: var(--radius-sm); background: var(--color-surface-sunken); }
+.cp-prefs__projects .cp-onboarding__folder { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-prefs__projects li > .cp-icon { flex: none; color: var(--color-accent); }
 .cp-prefs__value { font-size: var(--text-sm); font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
 .cp-prefs__links { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .cp-prefs__links .cp-button { text-decoration: none; color: var(--color-text); padding-block: var(--space-1); }

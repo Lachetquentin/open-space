@@ -315,8 +315,8 @@ describe('the open-space MCP server', () => {
   it('reads and changes the harmless settings only', async () => {
     const { api, preferences } = fakeApi();
     const shown = JSON.parse((await tool(api, 'get_settings')).text);
-    // the language is left out until chosen
-    assert.deepEqual(Object.keys(shown), MCP_SETTINGS.filter((key) => key !== 'language'));
+    // the language, the launcher's layout and the saved projects are left out until chosen
+    assert.deepEqual(Object.keys(shown), MCP_SETTINGS.filter((key) => !['language', 'launcherStyle', 'projects'].includes(key)));
     for (const key of ['roots', 'agentNote', 'permissionMode', 'automataFolder', 'claude', 'accountsBrowser', 'journalFolder']) assert.ok(!(MCP_SETTINGS as readonly string[]).includes(key), key);
     const refused = await tool(api, 'update_settings', { settings: { roots: ['/'], theme: 'space' } });
     assert.equal(refused.isError, true);
@@ -325,6 +325,9 @@ describe('the open-space MCP server', () => {
     assert.equal((await tool(api, 'update_settings', { settings: { theme: 'space', festivals: false } })).isError, false);
     assert.equal(preferences().theme, 'space');
     assert.equal(preferences().festivals, false);
+    assert.equal((await tool(api, 'update_settings', { settings: { launcherStyle: 'centered', projects: [{ folder: '/work/app', pinned: true }] } })).isError, false);
+    assert.equal(preferences().launcherStyle, 'centered');
+    assert.deepEqual(preferences().projects, [{ folder: path.resolve('/work/app'), pinned: true }]);
   });
 
   it('gives each session a key of its own, and keeps the external key private and revocable', () => {

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
-import { DEFAULT_PREFERENCES, Settings, parsePreferences } from './settings.ts';
+import { DEFAULT_PREFERENCES, Settings, allowedProjects, parsePreferences } from './settings.ts';
 
 const folder = mkdtempSync(path.join(os.tmpdir(), 'office-settings-'));
 after(() => rmSync(folder, { recursive: true, force: true }));
@@ -32,6 +32,11 @@ describe('settings', () => {
     assert.deepEqual(parsePreferences({ effort: 'ultra', timeFormat: 'swatch' }), {});
     assert.deepEqual(parsePreferences({ windowStyle: 'terminal' }), { windowStyle: 'terminal' });
     assert.deepEqual(parsePreferences({ windowStyle: 'matrix' }), {});
+    assert.deepEqual(parsePreferences({ launcherStyle: 'centered' }), { launcherStyle: 'centered' });
+    assert.deepEqual(parsePreferences({ launcherStyle: 'floating' }), {}, 'an unknown launcher layout is left out');
+    assert.deepEqual(parsePreferences({ projects: [{ folder: '~/app', pinned: true }, { folder: '/home/me/app' }, { folder: 'relative' }, 'nope', { folder: '/b', pinned: 'yes' }] }, '/home/me').projects, [
+      { folder: path.resolve('/home/me/app'), pinned: true }, { folder: path.resolve('/b') },
+    ], 'full folders, each once, pinned only when true');
     assert.deepEqual(parsePreferences({ remoteByDefault: true }), { remoteByDefault: true });
     assert.deepEqual(parsePreferences({ remoteByDefault: 'yes' }), {});
     assert.deepEqual(parsePreferences({ tagColors: true }), { tagColors: true });
@@ -48,6 +53,19 @@ describe('settings', () => {
     assert.deepEqual(parsePreferences({ claude: { enableWorkflows: false, crossSessionInbound: 'hold', outputStyle: 'Concis', workflowSizeGuideline: 'huge', ultracode: true, env: { A: '1' } } }).claude, {
       enableWorkflows: false, crossSessionInbound: 'hold', outputStyle: 'Concis',
     }, 'only the keys Open Space offers, with known values');
+  });
+
+  it('saves a new project only inside the roots, under its real path, and keeps the ones already saved', () => {
+    const root = path.join(folder, 'roots');
+    const outside = path.join(folder, 'outside');
+    mkdirSync(path.join(root, 'app'), { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    const gone = path.join(root, 'unplugged');
+    const saved = allowedProjects(
+      [{ folder: path.join(root, 'app'), pinned: true }, { folder: outside }, { folder: path.join(root, 'missing') }, { folder: gone }, { folder: path.join(root, 'app') }],
+      [{ folder: gone }], [root],
+    );
+    assert.deepEqual(saved, [{ folder: realpathSync(path.join(root, 'app')), pinned: true }, { folder: gone }]);
   });
 
   it('a settings file from before worktrees offers to isolate when the folder is taken', async () => {

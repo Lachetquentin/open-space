@@ -40,9 +40,11 @@ import { SessionLog, switchedOffFolder } from './session-log.ts';
 import { searchSessions } from './search.ts';
 import {
   borrowedPlace, branchStatus, canOpenPullRequest, checkOnBranch, commitWork, copyIncluded, createWorktree, deleteBranch, dropBranch, folderRepo, keptBranchOf, landBranch,
-  listBranches, moveConversation, projectOf, recreateWorktree, removeWorktree, setBranchNote,
+  listBranches, moveConversation, projectOf, recreateWorktree, removeWorktree, reusableBranches, setBranchNote,
 } from './worktrees.ts';
 
+/** A branch of a repository, as SessionManager.reusing holds it. */
+const reuseKey = (mainRoot: string, branch: string) => JSON.stringify([mainRoot, branch]);
 const STATES: ReadonlySet<string> = new Set(['starting', 'work', 'perm', 'wait', 'done', 'closed', 'error']);
 const SAVE_DELAY_MS = 500;
 /** A session paused by the usage limit resumes this long after the reset, for claude.ai to have reset it too. */
@@ -146,6 +148,8 @@ export class SessionManager {
   private asides = new Map<string, { aside: Aside; stop: () => void }>();
   /** new conversations started here that have not sent a message with words yet: that message gives their tag */
   private awaitingTag = new Set<string>();
+  /** the branches a new session is being settled on (see reusable), as `reuseKey`: no other may take them meanwhile */
+  private reusing = new Set<string>();
   /** the browsers each session's last process was launched with: what its conversation is told about is what it has */
   private launchedBrowsers = new Map<string, BrowserLaunch>();
   /** sessions whose process waits for the end of a turn to be released for other browsers (switchBrowsers) */
@@ -689,79 +693,90 @@ export class SessionManager {
     if (!trusted && !options.trust) throw new TrustNeeded(cwd, code);
     if (!trusted && options.trust === 'folder') await this.trusted.add(cwd);
     if (options.resumeId && this.sessions.has(options.resumeId)) throw new Error(st.sessions.alreadyOpen);
-    const taken = new Set([...this.sessions.values()].map((session) => session.snapshot().name));
-    // one of Claude Desktop's, kept under the key of a worktree of the folder: its custom title is not a name
-    const resumeId = options.resumeId;
-    const borrowedFrom = resumeId && !options.isolate ? await worktreeTranscript(cwd, resumeId, this.deps.home) : null;
-    // a resumed conversation keeps the name its session had, unless someone else was asked for or took it since
-    const former = resumeId && !borrowedFrom && !options.name?.trim() ? await lastName(cwd, resumeId, this.deps.home) : null;
-    const formerName = former && !taken.has(former) ? former.slice(0, MAX_NAME) : null;
-    const name = options.name?.trim().slice(0, MAX_NAME) || formerName || pickSessionName(taken);
-    // a resumed conversation keeps its id: the session goes on with it through --resume
-    const info = newSessionInfo({ id: options.resumeId ?? randomUUID(), name, cwd, model: options.model ?? '', permissionMode: options.permissionMode ?? DEFAULT_PERMISSION_MODE }, this.now());
-    if (options.resumeId) info.resumable = true;
-    if (formerName) info.introducedAs = formerName;
-    const formerTags = resumeId && this.conversationTags.get(resumeId);
-    if (formerTags) info.tags = [...formerTags];
-    // switched off, its session left its thread aside (see forget): it comes back whole
-    const restored = options.resumeId ? await rename(this.switchedOffLog(options.resumeId), path.join(this.logsDir, `${options.resumeId}.jsonl`)).then(() => true, () => false) : false;
-    if (options.effort) info.effort = options.effort;
-    if (options.ultracode) info.ultracode = true;
-    if (options.fastMode) info.fastMode = true;
-    if (!trusted && options.trust === 'restricted') info.untrusted = true;
-    // the project of its keys (server/vault.ts), read now from the folder the user chose and kept: never read again from
-    // files its agent could write (one naming another repository); its worktrees are of the same repository
-    info.project = projectOf(cwd);
-    if (started.spawned) info.spawned = true;
-    if (started.trigger) info.trigger = started.trigger;
-    if (started.role) info.role = started.role;
-    if (started.allowedTools?.length) info.allowedTools = [...started.allowedTools];
-    if (started.restrict && isRestricted(started.restrict)) info.restrict = started.restrict;
-    if (started.accountsBrowser && started.accountsBrowser !== (this.deps.accountsBrowser?.() ?? 'shared')) info.accountsBrowser = started.accountsBrowser;
-    const log = await this.openLog(info.id);
-    const session = this.createSession(info, log);
-    if (started.caps) session.limit(started.caps);
-    this.logs.set(info.id, log);
-    this.sessions.set(info.id, session);
-    if (!options.resumeId) this.awaitingTag.add(info.id);
-    this.deps.broadcast({ t: 'session', session: session.snapshot() });
-    this.save();
-    if (!this.folderCommands.has(cwd)) void this.probeFolder(cwd, !!info.untrusted);
-    if (options.resumeId) {
-      const found = (await listConversations(cwd, new Set(), this.deps.home)).find((conversation) => conversation.id === options.resumeId);
-      session.showHistory(found?.title ?? st.sessions.untitledConversation, restored ? [] : await lastExchanges(cwd, options.resumeId, 8, this.deps.home));
-    }
-    // on a branch of its own: the worktree is made while the first message waits in the queue; a conversation that
-    // was switched off with its branch kept gets that branch's worktree back
-    const repo = options.isolate || options.resumeId ? await folderRepo(cwd).catch(() => null) : null;
-    const kept = options.resumeId && repo ? await keptBranchOf(repo.root, options.resumeId).catch(() => null) : null;
-    // Claude Desktop's goes on in its worktree, or on its branch in a folder made again; else in the main folder, its
-    // transcripts copied where --resume looks for them
-    const borrowed = resumeId && borrowedFrom && repo && !kept ? await borrowedPlace(repo.root, borrowedFrom, resumeId, this.deps.home).catch(() => null) : null;
-    // it merges back into the branch its Desktop session started from (dev, say), when that one is still there
-    const source = resumeId && borrowed && repo ? await desktopSourceBranch(resumeId, this.deps.home).catch(() => '') : '';
-    const desktopBase = source && repo?.branches.includes(source) ? source : undefined;
-    if (resumeId && borrowedFrom && !borrowed?.root) {
-      await importConversation(cwd, resumeId, this.deps.home).catch((error) => this.deps.log(`cannot copy the conversation ${resumeId}`, error));
-    }
-    if (options.isolate || kept || borrowed) session.startPreparing(st.worktree.preparing);
-    if (options.text?.trim() || options.images?.length || options.files?.length) {
-      try {
-        session.send(options.text ?? '', options.images, options.files);
-        this.tagFromFirstMessage(session, options.text ?? '');
-      } catch (error) {
-        await this.forget(info.id);
-        throw error;
+    // a branch to go on with: one of the server's own list, never taken from the page as it is
+    const reused = options.isolate?.branch ? await this.reuse(cwd, options.isolate.branch) : null;
+    // released here on any failure; once the worktree is being settled, reviveWorktree lets it go
+    try {
+      const taken = new Set([...this.sessions.values()].map((session) => session.snapshot().name));
+      // one of Claude Desktop's, kept under the key of a worktree of the folder: its custom title is not a name
+      const resumeId = options.resumeId;
+      const borrowedFrom = resumeId && !options.isolate ? await worktreeTranscript(cwd, resumeId, this.deps.home) : null;
+      // a resumed conversation keeps the name its session had, unless someone else was asked for or took it since
+      const former = resumeId && !borrowedFrom && !options.name?.trim() ? await lastName(cwd, resumeId, this.deps.home) : null;
+      const formerName = former && !taken.has(former) ? former.slice(0, MAX_NAME) : null;
+      const name = options.name?.trim().slice(0, MAX_NAME) || formerName || pickSessionName(taken);
+      // a resumed conversation keeps its id: the session goes on with it through --resume
+      const info = newSessionInfo({ id: options.resumeId ?? randomUUID(), name, cwd, model: options.model ?? '', permissionMode: options.permissionMode ?? DEFAULT_PERMISSION_MODE }, this.now());
+      if (options.resumeId) info.resumable = true;
+      if (formerName) info.introducedAs = formerName;
+      const formerTags = resumeId && this.conversationTags.get(resumeId);
+      if (formerTags) info.tags = [...formerTags];
+      // switched off, its session left its thread aside (see forget): it comes back whole
+      const restored = options.resumeId ? await rename(this.switchedOffLog(options.resumeId), path.join(this.logsDir, `${options.resumeId}.jsonl`)).then(() => true, () => false) : false;
+      if (options.effort) info.effort = options.effort;
+      if (options.ultracode) info.ultracode = true;
+      if (options.fastMode) info.fastMode = true;
+      if (!trusted && options.trust === 'restricted') info.untrusted = true;
+      // the project of its keys (server/vault.ts), read now from the folder the user chose and kept: never read again from
+      // files its agent could write (one naming another repository); its worktrees are of the same repository
+      info.project = projectOf(cwd);
+      if (started.spawned) info.spawned = true;
+      if (started.trigger) info.trigger = started.trigger;
+      if (started.role) info.role = started.role;
+      if (started.allowedTools?.length) info.allowedTools = [...started.allowedTools];
+      if (started.restrict && isRestricted(started.restrict)) info.restrict = started.restrict;
+      if (started.accountsBrowser && started.accountsBrowser !== (this.deps.accountsBrowser?.() ?? 'shared')) info.accountsBrowser = started.accountsBrowser;
+      const log = await this.openLog(info.id);
+      const session = this.createSession(info, log);
+      if (started.caps) session.limit(started.caps);
+      this.logs.set(info.id, log);
+      this.sessions.set(info.id, session);
+      if (!options.resumeId) this.awaitingTag.add(info.id);
+      this.deps.broadcast({ t: 'session', session: session.snapshot() });
+      this.save();
+      if (!this.folderCommands.has(cwd)) void this.probeFolder(cwd, !!info.untrusted);
+      if (options.resumeId) {
+        const found = (await listConversations(cwd, new Set(), this.deps.home)).find((conversation) => conversation.id === options.resumeId);
+        session.showHistory(found?.title ?? st.sessions.untitledConversation, restored ? [] : await lastExchanges(cwd, options.resumeId, 8, this.deps.home));
       }
+      // on a branch of its own: the worktree is made while the first message waits in the queue; a conversation that
+      // was switched off with its branch kept gets that branch's worktree back
+      const repo = options.isolate || options.resumeId ? await folderRepo(cwd).catch(() => null) : null;
+      const kept = options.resumeId && repo ? await keptBranchOf(repo.root, options.resumeId).catch(() => null) : null;
+      // Claude Desktop's goes on in its worktree, or on its branch in a folder made again; else in the main folder, its
+      // transcripts copied where --resume looks for them
+      const borrowed = resumeId && borrowedFrom && repo && !kept ? await borrowedPlace(repo.root, borrowedFrom, resumeId, this.deps.home).catch(() => null) : null;
+      // it merges back into the branch its Desktop session started from (dev, say), when that one is still there
+      const source = resumeId && borrowed && repo ? await desktopSourceBranch(resumeId, this.deps.home).catch(() => '') : '';
+      const desktopBase = source && repo?.branches.includes(source) ? source : undefined;
+      if (resumeId && borrowedFrom && !borrowed?.root) {
+        await importConversation(cwd, resumeId, this.deps.home).catch((error) => this.deps.log(`cannot copy the conversation ${resumeId}`, error));
+      }
+      if (options.isolate || kept || borrowed) session.startPreparing(st.worktree.preparing);
+      if (options.text?.trim() || options.images?.length || options.files?.length) {
+        try {
+          session.send(options.text ?? '', options.images, options.files);
+          this.tagFromFirstMessage(session, options.text ?? '');
+        } catch (error) {
+          await this.forget(info.id);
+          throw error;
+        }
+      }
+      // Remote Control needs the process, which waits for the worktree
+      const remote = () => (started.remote ? this.remoteOn(session) : this.remoteByDefault(session));
+      if (kept && repo) void this.reviveWorktree(info.id, repo, kept.branch, kept.note.base).then(remote);
+      else if (borrowed?.root && repo) void this.borrowWorktree(info.id, repo, borrowed.root, borrowed.branch, desktopBase).then(remote);
+      else if (borrowed && repo) void this.reviveWorktree(info.id, repo, borrowed.branch, desktopBase).then(remote);
+      else if (reused) {
+        const existing = reused.row.folder && existsSync(reused.row.folder) ? reused.row.folder : undefined;
+        void this.reviveWorktree(info.id, reused.repo, reused.row.branch, reused.row.base, existing).finally(() => this.reusing.delete(reused.key)).then(remote);
+      } else if (options.isolate) void this.prepareWorktree(info.id, cwd, repo, options.isolate.base, options.text ?? '').then(remote);
+      else remote();
+      return session.snapshot();
+    } catch (error) {
+      if (reused) this.reusing.delete(reused.key);
+      throw error;
     }
-    // Remote Control needs the process, which waits for the worktree
-    const remote = () => (started.remote ? this.remoteOn(session) : this.remoteByDefault(session));
-    if (kept && repo) void this.reviveWorktree(info.id, repo, kept.branch, kept.note.base).then(remote);
-    else if (borrowed?.root && repo) void this.borrowWorktree(info.id, repo, borrowed.root, borrowed.branch, desktopBase).then(remote);
-    else if (borrowed && repo) void this.reviveWorktree(info.id, repo, borrowed.branch, desktopBase).then(remote);
-    else if (options.isolate) void this.prepareWorktree(info.id, cwd, repo, options.isolate.base, options.text ?? '').then(remote);
-    else remote();
-    return session.snapshot();
   }
 
   /** A trigger's run in Remote Control, so that it can be followed and answered from the phone. */
@@ -808,16 +823,19 @@ export class SessionManager {
     }
   }
 
-  /** A kept branch resumed: its worktree again, and the conversation moved there. */
-  private async reviveWorktree(id: string, repo: Omit<FolderRepo, 'merged'>, branch: string, base: string | undefined) {
+  /**
+   * A kept branch resumed, or one picked in the launcher to go on with: its worktree again, and the conversation moved
+   * there. `existing`: the branch's worktree, still there, which the session takes as it is.
+   */
+  private async reviveWorktree(id: string, repo: Omit<FolderRepo, 'merged'>, branch: string, base: string | undefined, existing?: string) {
     const session = this.sessions.get(id);
     if (!session) return;
     const info = session.snapshot();
     try {
       this.checkRepoAllowed(repo);
-      const root = await recreateWorktree(repo.root, branch);
-      session.announce({ k: 'note', text: st.worktree.revived(branch) });
-      await this.settleWorktree(session, repo, root, branch, base || repo.branch, info.cwd);
+      const root = existing ?? await recreateWorktree(repo.root, branch);
+      session.announce({ k: 'note', text: existing ? st.worktree.reused(branch) : st.worktree.revived(branch) });
+      await this.settleWorktree(session, repo, root, branch, base || repo.branch, info.cwd, existing ? 'existing' : 'made');
     } catch (error) {
       session.announce({ k: 'note', text: st.worktree.prepareFailed(error instanceof Error ? error.message : String(error), info.name, path.basename(info.cwd)) });
       session.finishPreparing(false);
@@ -835,7 +853,7 @@ export class SessionManager {
     try {
       this.checkRepoAllowed(repo);
       session.announce({ k: 'note', text: st.worktree.borrowed(branch) });
-      await this.settleWorktree(session, repo, root, branch, base || repo.branch || branch, info.cwd, true);
+      await this.settleWorktree(session, repo, root, branch, base || repo.branch || branch, info.cwd, 'borrowed');
     } catch (error) {
       // it goes on in the main folder, where --resume needs its transcripts
       await importConversation(info.cwd, info.id, this.deps.home).catch(() => {});
@@ -850,12 +868,14 @@ export class SessionManager {
   }
 
   /**
-   * The worktree is there: what git does not carry is copied, the session moves in, and its queue leaves. `borrowed`:
-   * another tool's worktree (Claude Desktop's), which has what it needs and keeps its conversation where it is.
+   * The worktree is there: what git does not carry is copied, the session moves in, and its queue leaves. `how`: a
+   * folder just made; one that was there already (`existing`), taken as it is and left if the session goes meanwhile;
+   * or another tool's worktree (`borrowed`, Claude Desktop's), which also keeps its conversation where it is.
    */
-  private async settleWorktree(session: Session, repo: Omit<FolderRepo, 'merged'>, root: string, branch: string, base: string, home: string, borrowed = false) {
-    const copied = borrowed ? { copied: 0, failed: 0 } : await copyIncluded(repo.root, root).catch(() => ({ copied: 0, failed: 1 }));
-    if (this.sessions.get(session.id) !== session && borrowed) return;
+  private async settleWorktree(session: Session, repo: Omit<FolderRepo, 'merged'>, root: string, branch: string, base: string, home: string, how: 'made' | 'existing' | 'borrowed' = 'made') {
+    const borrowed = how === 'borrowed';
+    const copied = how !== 'made' ? { copied: 0, failed: 0 } : await copyIncluded(repo.root, root).catch(() => ({ copied: 0, failed: 1 }));
+    if (this.sessions.get(session.id) !== session && how !== 'made') return;
     // switched off while its folder was made: the folder goes, and the branch too when it holds nothing of its own
     if (this.sessions.get(session.id) !== session) {
       await removeWorktree(repo.root, root, false).catch((error) => this.deps.log(`cannot remove the worktree ${root}`, error));
@@ -1064,7 +1084,24 @@ export class SessionManager {
     // a repository that starts above the allowed folders cannot have its worktrees there: no branch is offered
     if (!repo || !resolveAllowedDirectory(repo.root, this.roots())) return null;
     const rows = await listBranches(repo.root).catch(() => [] as BranchRow[]);
-    return { ...repo, merged: rows.filter((row) => row.merged && !row.inUse && !this.sessionOn(repo.root, row)).length };
+    const reusable = this.reusable(repo.root, rows);
+    return { ...repo, merged: rows.filter((row) => row.merged && !row.inUse && !this.sessionOn(repo.root, row)).length, ...(reusable.length ? { reusable } : {}) };
+  }
+
+  /** The branches of the cleaning panel a new session can go on with: no session works on them, nor is being settled on them, and their folder is within the allowed ones. */
+  private reusable(mainRoot: string, rows: readonly BranchRow[]) {
+    return reusableBranches(rows, (row) => !!this.sessionOn(mainRoot, row) || this.reusing.has(reuseKey(mainRoot, row.branch)) || (!!row.folder && existsSync(row.folder) && !resolveAllowedDirectory(row.folder, this.roots())));
+  }
+
+  /** The branch of the folder's repository a new session asked to go on with, kept for it; refused if it cannot be. */
+  private async reuse(cwd: string, branch: string): Promise<{ repo: Omit<FolderRepo, 'merged'>; row: BranchRow; key: string }> {
+    const repo = await folderRepo(cwd).catch(() => null);
+    const rows = repo ? await listBranches(repo.root).catch(() => [] as BranchRow[]) : [];
+    const row = repo && this.reusable(repo.root, rows).some((one) => one.branch === branch) ? rows.find((one) => one.branch === branch) : undefined;
+    if (!repo || !row) throw new Error(st.worktree.notReusable(branch));
+    const key = reuseKey(repo.root, branch);
+    this.reusing.add(key);
+    return { repo, row, key };
   }
 
   /** The session working on a branch of the cleaning panel, if one does. */
@@ -1099,6 +1136,7 @@ export class SessionManager {
     for (const wanted of chosen) {
       const row = rows.find((candidate) => candidate.branch === wanted.branch && candidate.folder === wanted.folder);
       if (!row) continue;
+      if (this.reusing.has(reuseKey(repo.root, row.branch))) { failed.push(row.branch); continue; }
       const session = this.sessionOn(repo.root, row);
       // what the user agreed to lose is what they saw: new commits or more changes since are not part of it
       const changed = !row.merged && (row.head !== wanted.head || row.dirty > wanted.dirty);

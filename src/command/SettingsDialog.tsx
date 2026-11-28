@@ -7,7 +7,7 @@ import type { TerminalKind } from '../../shared/terminal.ts';
 import { applyGlassOpacity } from '../design/glass.ts';
 import { IS_MAC, IS_WINDOWS } from '../lib/platform.ts';
 import { INBOUND_POLICIES, WORKFLOW_SIZES, type ClaudeSettings, type ClaudeSwitch } from '../../shared/claude-settings.ts';
-import { ACCOUNTS_BROWSERS, EFFORTS, GLASS_OPACITY, WINDOW_STYLES, IDLE_COMPACT_MINUTES, ISOLATE_MODES, PERMISSION_MODES, TIME_FORMATS, type Preferences } from '../../shared/protocol.ts';
+import { ACCOUNTS_BROWSERS, EFFORTS, GLASS_OPACITY, LAUNCHER_STYLES, WINDOW_STYLES, IDLE_COMPACT_MINUTES, ISOLATE_MODES, PERMISSION_MODES, TIME_FORMATS, type Preferences, type SavedProject } from '../../shared/protocol.ts';
 import { ROOM_THEMES, type RoomTheme } from '../../shared/room-themes.ts';
 import { matchesAll } from '../../shared/search.ts';
 import { t } from '../i18n/index.ts';
@@ -15,10 +15,11 @@ import { homeRelative } from '../lib/format.ts';
 import { modeLabel, models } from '../state/labels.ts';
 import { outdatedSessions, SETTINGS_SECTIONS, useSessions, type SettingsSection } from '../state/sessions.ts';
 import { CONFIG_LABELS, settingEntries, type SettingRow } from '../state/settings-index.ts';
+import { insideRoots, withoutProject, withoutProjects, withPin } from '../state/projects.ts';
 import {
   ActivityIcon, AgentIcon, AutomatonIcon, TagIcon, BellIcon, DiffIcon, BranchIcon, PipIcon, CursorIcon, DownloadIcon, CalendarIcon, ChangelogIcon, ChartIcon, ClockIcon, CloseIcon, CoffeeIcon, CopyIcon, RadioIcon, CrewIcon, DeskIcon, ExternalLinkIcon, FestivalIcon, FolderIcon,
-  CompactIcon, FreeWindowsIcon, GaugeIcon, GlobeIcon, InboxIcon, InfoIcon, ItsMeIcon, KeyIcon, KeyboardIcon, LanguageIcon, MessageIcon, NotesIcon, PlanIcon, RefreshIcon, SearchIcon, SettingsIcon, SoundIcon,
-  OpacityIcon, PaletteIcon, PhoneIcon, SparklesIcon, TerminalIcon, ThinkingIcon, TimerIcon, TuneIcon, UltracodeIcon, WebhookIcon, WorkflowIcon,
+  CompactIcon, FreeWindowsIcon, GaugeIcon, GlobeIcon, InboxIcon, InfoIcon, ItsMeIcon, KeyIcon, KeyboardIcon, LanguageIcon, LauncherIcon, MessageIcon, NotesIcon, PlanIcon, RefreshIcon, SearchIcon, SettingsIcon, SoundIcon,
+  OpacityIcon, PaletteIcon, PhoneIcon, PinIcon, SparklesIcon, TerminalIcon, ThinkingIcon, TimerIcon, TuneIcon, UltracodeIcon, WebhookIcon, WorkflowIcon,
 } from './Icons.tsx';
 import { Copyable } from './Copyable.tsx';
 import { AccountAction } from './AccountAction.tsx';
@@ -52,9 +53,9 @@ const LAYOUT: Readonly<Partial<Record<SettingsSection, readonly (readonly [Group
     ['reasoning', ['thinking', 'outputStyle', 'responseLanguage', 'promptSuggestions']], ['autonomy', ['autoCompact', 'idleCompact', 'autoContinue', 'autoModeInPlan']],
     ['workflows', ['workflows', 'ultracodeKeyword', 'workflowSize']], ['together', ['inbound', 'artifacts']],
   ],
-  folders: [['places', ['roots', 'defaultFolder']], ['files', ['journalFolder']]],
+  folders: [['places', ['roots', 'defaultFolder', 'projects']], ['files', ['journalFolder']]],
   // what Open Space looks like: the windows, then the room and its people
-  office: [['appearance', ['windowStyle', 'glassOpacity', 'tagColors', 'reduceMotion']], ['life', ['theme', 'festivals', 'officeLife', 'hideNames', 'radio', 'previewFestival', 'previewHour']], ['crew', ['crew']]],
+  office: [['appearance', ['windowStyle', 'launcherStyle', 'glassOpacity', 'tagColors', 'reduceMotion']], ['life', ['theme', 'festivals', 'officeLife', 'hideNames', 'radio', 'previewFestival', 'previewHour']], ['crew', ['crew']]],
   // what starts sessions without the user at the keyboard, and the chat bots and programs that reach Open Space (body())
   connections: [['automata', ['automata', 'hooksAddress', 'automataFolder']], ['phone', ['phoneAccess']]],
   about: [['appearance', ['version', 'claude', 'account', 'links', 'dockApp']]],
@@ -140,8 +141,9 @@ function SettingsEditor() {
   const [query, setQuery] = useState('');
   const content = useRef<HTMLDivElement>(null);
   // the notes and automatons' folders as the page shows paths ("~/Journal"): the server expands "~"
+  // the saved projects are not in it: they change from the launcher too, so the list below edits the live ones and a save never carries a stale copy
   const [draft, setDraft] = useState<Preferences>(() => ({
-    ...preferences, roots: rootsLocked ? roots : preferences.roots, journalFolder: homeRelative(preferences.journalFolder), automataFolder: homeRelative(preferences.automataFolder),
+    ...withoutProjects(preferences), roots: rootsLocked ? roots : preferences.roots, journalFolder: homeRelative(preferences.journalFolder), automataFolder: homeRelative(preferences.automataFolder),
   }));
   const terminal = draft.terminal ?? 'cmd';
   const change = (changes: Partial<Preferences>) => setDraft((current) => ({ ...current, ...changes }));
@@ -156,7 +158,7 @@ function SettingsEditor() {
     if (!isAutomataFolder(next.automataFolder)) return t.settings.dialog.automataFolderInvalid;
     // a server older than this page sends no hooksAddress
     if (hooksAddressOf(next.hooksAddress ?? '') === null) return t.settings.dialog.hooksAddressInvalid;
-    return store().setPreferences(next) ? null : t.settings.noServer;
+    return store().setPreferences(withoutProjects(next)) ? null : t.settings.noServer;
   });
 
   // a row picked in the search palette comes into view, lit for a moment
@@ -223,6 +225,13 @@ function SettingsEditor() {
         <Row key={id} id={id} flash={flash} icon={<TerminalIcon />} title={rows.windowStyle.title} hint={rows.windowStyle.hint}>
           <select aria-labelledby={`setting-${id}-title`} value={draft.windowStyle} onChange={(e) => change({ windowStyle: e.target.value as Preferences['windowStyle'] })}>
             {WINDOW_STYLES.map((style) => <option key={style} value={style}>{rows.windowStyle.options[style]}</option>)}
+          </select>
+        </Row>
+      );
+      case 'launcherStyle': return (
+        <Row key={id} id={id} flash={flash} icon={<LauncherIcon />} title={rows.launcherStyle.title} hint={rows.launcherStyle.hint}>
+          <select aria-labelledby={`setting-${id}-title`} value={draft.launcherStyle ?? 'classic'} onChange={(e) => change({ launcherStyle: e.target.value as Preferences['launcherStyle'] })}>
+            {LAUNCHER_STYLES.map((style) => <option key={style} value={style}>{rows.launcherStyle.options[style]}</option>)}
           </select>
         </Row>
       );
@@ -400,6 +409,27 @@ function SettingsEditor() {
           </select>
         </Row>
       );
+      case 'projects': {
+        const saved = preferences.projects ?? [];
+        const editProjects = (edit: (live: readonly SavedProject[]) => SavedProject[]) => store().setPreferences({ projects: edit(store().preferences.projects ?? []) });
+        return (
+          <Row key={id} id={id} flash={flash} wide icon={<PinIcon />} title={rows.projects.title} hint={rows.projects.hint}>
+            {saved.length ? (
+              <ul className="cp-onboarding__folders cp-prefs__projects">
+                {saved.map((project) => (
+                  <li key={project.folder}>
+                    {project.pinned && <PinIcon />}
+                    <span className="cp-onboarding__folder" title={project.folder}>{homeRelative(project.folder)}</span>
+                    {!insideRoots(project.folder, roots) && <span className="cp-muted cp-prefs__outside">{rows.projects.outsideRoots}</span>}
+                    {project.pinned && <button type="button" className="cp-button" data-size="small" onClick={() => editProjects((live) => withPin(live, project.folder, false))}>{rows.projects.unpin}</button>}
+                    <button type="button" className="cp-icon-button" data-size="small" aria-label={rows.projects.remove(homeRelative(project.folder))} title={rows.projects.remove(homeRelative(project.folder))} onClick={() => editProjects((live) => withoutProject(live, project.folder))}><CloseIcon /></button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="cp-muted">{rows.projects.empty}</p>}
+          </Row>
+        );
+      }
       case 'theme': return (
         <Row key={id} id={id} flash={flash} icon={<PaletteIcon />} title={rows.theme.title} hint={rows.theme.hint}>
           <select aria-labelledby={`setting-${id}-title`} value={draft.theme} onChange={(e) => change({ theme: e.target.value as RoomTheme })}>

@@ -79,7 +79,7 @@ function setup(dataDir = path.join(scratch, `data-${++count}`)) {
   const manager = new SessionManager({ config, spawnProcess, broadcast: (message) => messages.push(message), log: () => {}, home, graceMs: 20 });
   const find = (id: string): SessionInfo => { const found = manager.list().find((session) => session.id === id); assert.ok(found); return found; };
   const events = (id: string): OfficeEvent[] => messages.flatMap((message) => (message.t === 'ev' && message.sessionId === id ? [message.ev] : []));
-  return { manager, processes, find, events, dataDir };
+  return { manager, processes, messages, find, events, dataDir };
 }
 
 /** A new isolated session in `repo` (or a folder of it), its worktree ready and its first message sent. */
@@ -215,6 +215,72 @@ describe('an isolated session', () => {
     assert.equal(revived.worktree?.branch, worktree.branch);
     assert.equal(readFileSync(path.join(revived.cwd, 'pay.ts'), 'utf8'), 'pay\n');
     assert.ok(existsSync(path.join(projectFolder(revived.cwd, home), `${id}.jsonl`)));
+    await manager.shutdown();
+  });
+
+  it('a kept branch is offered to a new session, which works on it in a folder made again, no new branch made', async () => {
+    const { manager, processes, find, repo, id } = await isolated();
+    const { branch } = find(id).worktree!;
+    write(path.join(find(id).worktree!.root, 'pay.ts'), 'pay\n');
+    await manager.forget(id);
+    assert.deepEqual((await manager.folderInfo(repo))?.reusable?.map((one) => [one.branch, one.base]), [[branch, 'main']]);
+    const tom = await manager.create({ cwd: repo, name: 'Tom', text: 'Finis le paiement', isolate: { branch } });
+    await until(() => find(tom.id).worktree !== undefined && processes.length === 2, 'the worktree of the kept branch');
+    assert.equal(find(tom.id).worktree?.branch, branch);
+    assert.equal(find(tom.id).worktree?.base, 'main');
+    assert.equal(readFileSync(path.join(find(tom.id).cwd, 'pay.ts'), 'utf8'), 'pay\n');
+    assert.equal(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/os/'), branch);
+    assert.equal((await manager.folderInfo(repo))?.reusable, undefined, 'taken: offered to no one else');
+    await manager.shutdown();
+  });
+
+  it('an existing worktree nobody works in is taken as it is; one taken, or the user\'s own branch, is refused', async () => {
+    const repo = repository();
+    const left = path.join(repo, '.claude/worktrees/fix-login');
+    git(repo, 'worktree', 'add', '-q', '-b', 'worktree-fix-login', left);
+    write(path.join(left, 'draft.ts'), 'not committed\n');
+    git(repo, 'worktree', 'add', '-q', '-b', 'feature', path.join(repo, '.claude/worktrees/feature'));
+    const { manager, processes, find } = setup();
+    await manager.init();
+    assert.deepEqual((await manager.folderInfo(repo))?.reusable?.map((one) => one.branch), ['worktree-fix-login']);
+    await assert.rejects(manager.create({ cwd: repo, name: 'Tom', text: 'salut', isolate: { branch: 'feature' } }));
+    const lina = await manager.create({ cwd: repo, name: 'Lina', text: 'Reprends le login', isolate: { branch: 'worktree-fix-login' } });
+    await until(() => find(lina.id).worktree !== undefined && processes.length === 1, 'the existing worktree');
+    assert.equal(find(lina.id).worktree?.root, realpathSync(left));
+    assert.equal(readFileSync(path.join(find(lina.id).cwd, 'draft.ts'), 'utf8'), 'not committed\n');
+    await assert.rejects(manager.create({ cwd: repo, name: 'Tom', text: 'salut', isolate: { branch: 'worktree-fix-login' } }));
+    assert.equal(manager.list().length, 1);
+    await manager.shutdown();
+  });
+
+  it('a session that fails to start on a branch taken for it gives the branch back', async () => {
+    const repo = repository();
+    git(repo, 'worktree', 'add', '-q', '-b', 'worktree-fix-login', path.join(repo, '.claude/worktrees/fix-login'));
+    const { manager, processes, messages, find } = setup();
+    await manager.init();
+    const push = messages.push;
+    messages.push = () => { throw new Error('broadcast failed'); };
+    await assert.rejects(manager.create({ cwd: repo, name: 'Tom', text: 'salut', isolate: { branch: 'worktree-fix-login' } }), /broadcast failed/);
+    messages.push = push;
+    assert.deepEqual((await manager.folderInfo(repo))?.reusable?.map((one) => one.branch), ['worktree-fix-login']);
+    const lina = await manager.create({ cwd: repo, name: 'Lina', text: 'Reprends le login', isolate: { branch: 'worktree-fix-login' } });
+    await until(() => find(lina.id).worktree !== undefined && processes.length >= 1, 'the existing worktree');
+    await manager.shutdown();
+  });
+
+  it('the cleaning panel leaves alone a branch a new session is being settled on', async () => {
+    const repo = repository();
+    const left = path.join(repo, '.claude/worktrees/fix-login');
+    git(repo, 'worktree', 'add', '-q', '-b', 'worktree-fix-login', left);
+    const { manager, messages } = setup();
+    await manager.init();
+    const row = (await manager.branches(repo)).branches.find((one) => one.branch === 'worktree-fix-login')!;
+    let cleaning: Promise<string[]> | undefined;
+    const push = messages.push.bind(messages);
+    messages.push = (...items) => { cleaning ??= manager.cleanBranches(repo, [{ branch: row.branch, folder: row.folder, head: row.head, dirty: row.dirty }]); return push(...items); };
+    await manager.create({ cwd: repo, name: 'Lina', text: 'Reprends le login', isolate: { branch: 'worktree-fix-login' } });
+    assert.deepEqual(await cleaning, ['worktree-fix-login']);
+    assert.ok(existsSync(left));
     await manager.shutdown();
   });
 

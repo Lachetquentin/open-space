@@ -286,7 +286,16 @@ export interface FolderRepo {
   dirty: number;
   /** branches with nothing left to merge, still lying around: the launcher reminds to tidy them from 3 on */
   merged: number;
+  /** branches a new session can work on (see ReusableBranch), newest first; absent or empty: none */
+  reusable?: ReusableBranch[];
 }
+
+/**
+ * A branch of the repository a new session can work on instead of a new one (the launcher's "Previous worktree"): one
+ * Open Space kept without a folder, or a worktree of .claude/worktrees no session works in. Only Open Space's branches
+ * and Claude Code's (os/*, worktree-*): any other is the user's own. `at`: its last commit, ms; `name`: who it was for.
+ */
+export interface ReusableBranch { branch: string; base: string; at: number; name?: string }
 
 /** When the launcher offers to isolate a session: when another session works in the folder already, always, or never. */
 export const ISOLATE_MODES = ['busy', 'always', 'never'] as const;
@@ -503,8 +512,9 @@ export interface SessionOptions {
   trust?: 'folder' | 'restricted';
   /** a Claude Code conversation already on disk to go on with (see Conversation), instead of a new one */
   resumeId?: string;
-  /** on a branch of its own, from `base` (the main checkout's branch when left out), in a worktree of the folder's repository */
-  isolate?: { base?: string };
+  /** on a branch of its own, from `base` (the main checkout's branch when left out), in a worktree of the folder's
+   * repository; with `branch` instead, on that one, a ReusableBranch of the folder (its folder made again if it has none) */
+  isolate?: { base?: string; branch?: string };
 }
 
 /** A Claude Code conversation found on disk for a folder, that a new session can go on with. updatedAt: ms. */
@@ -589,6 +599,10 @@ export interface Preferences {
   /** how much of what is behind the glass panes their tint hides, in percent (see GLASS_OPACITY) */
   glassOpacity: number;
   windowStyle: WindowStyle;
+  /** how the launcher lays out a new session's field (see LAUNCHER_STYLES); absent in older settings means 'classic' */
+  launcherStyle?: LauncherStyle;
+  /** the projects the user saved on purpose (the launcher's list of projects); absent in older settings means none */
+  projects?: SavedProject[];
   /** each session tag in a colour of its own, from its name (src/design/tag-colors.ts) */
   tagColors: boolean;
   /** minutes without a message after which a long conversation is compacted on its own (0 : never) */
@@ -623,6 +637,11 @@ export const IDLE_COMPACT_MINUTES = [0, 15, 30, 60, 120, 240] as const;
 /** How the windows and the thread are dressed, whatever the room's theme: only a skin, every control stays (tokens.css, components.css). */
 export const WINDOW_STYLES = ['classic', 'match', 'terminal', 'hacker', 'neon', 'dungeon', 'space', 'beach', 'pirate', 'forest'] as const;
 export type WindowStyle = (typeof WINDOW_STYLES)[number];
+/** The launcher's layouts: 'classic', its field at the foot of the column; 'centered', a question and the field in the middle, its options in chips under it. */
+export const LAUNCHER_STYLES = ['classic', 'centered'] as const;
+export type LauncherStyle = (typeof LAUNCHER_STYLES)[number];
+/** A folder the user saved as a project, a real one inside the roots: in the launcher's list, and with its pill in the header even without a session when pinned. */
+export interface SavedProject { folder: string; pinned?: boolean }
 export const TIME_FORMATS = ['auto', '24h', '12h'] as const;
 export type TimeFormat = (typeof TIME_FORMATS)[number];
 

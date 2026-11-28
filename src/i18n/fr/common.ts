@@ -41,6 +41,7 @@ export const common = {
     allProjects: 'Tout',
     allProjectsTitle: 'Les sessions de tous les projets',
     projectTitle: (folder: string, waiting: boolean) => `${folder} : ses sessions en clair, les autres en fantôme${waiting ? ' (une t’attend)' : ''}`,
+    projectEmptyTitle: (name: string) => `Lancer une session dans ${name}`,
     roomSessions: (room: string, sessions: string) => `${room} : ${sessions}`,
     session: 'session',
     sessions: 'sessions',

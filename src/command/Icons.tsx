@@ -5,7 +5,7 @@ import type { ModIcon } from '../../shared/mods.ts';
 import {
   AppWindow, Archive, ShieldCheck, Blend, Cpu, Eraser, FileDiff, GitBranch, GitMerge, GitPullRequest, ArrowLeft, Check, ArrowRight, Bell, BellOff, CalendarHeart, ChevronDown, ChevronUp, ChevronsUpDown, CircleAlert, Command, Download, Ellipsis, ExternalLink, File, Link, FileText, Image, Info, LayoutGrid, Maximize2, Minimize2, ListMusic, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Paperclip, Pause, Pencil, Palette, Play, Plus, Power, CircleDollarSign, Keyboard, NotebookPen, MessageSquareText, ChartColumn,
   Clock, Folder, FolderOpen, FolderPlus, FilePlus, Save, FileCode, FileBraces, FileImage, FileCog, FileLock, FileArchive, FilePlay, FileMusic, FileSpreadsheet, Copy, Languages, PartyPopper, Activity, Webhook, TrendingUp, CalendarDays, Bot, CornerDownLeft, ArrowUpDown, ScrollText, Coffee, Gauge, Timer, Sparkles, ChevronLeft, ChevronRight, RotateCw, CopyPlus, Brain, Shrink, ListChecks, Workflow, Inbox, Search, Settings, Shuffle, SkipBack, SlidersHorizontal, SkipForward, Smartphone, Sofa, Square, SquareTerminal, Star, Tag, Trash2, UserCheck, Users, Volume2, PawPrint, RotateCcw, VolumeX, X, Zap, Globe, KeyRound, PictureInPicture2, Pin, PinOff, SquareArrowOutUpRight, SquareArrowDownLeft,CodeXml, Eye, FolderSearch, type LucideIcon, List, Puzzle, Coins, ChartLine, Heart,
-  Radio, Focus, ListFilter, MousePointer2, LayoutDashboard, GripVertical, FastForward, Unplug, ServerOff, FileX, BookX, Lock, Undo2,
+  Radio, Focus, ListFilter, MousePointer2, LayoutDashboard, GripVertical, FastForward, Unplug, ServerOff, FileX, BookX, Lock, Undo2, ArrowUp, History, PanelsTopLeft,
 } from 'lucide-react';
 
 const icon = (Shape: LucideIcon) => () => <Shape className="cp-icon" size={16} strokeWidth={1.75} aria-hidden="true" />;
@@ -94,6 +94,12 @@ export const PreviousIcon = icon(SkipBack);
 export const LibraryIcon = icon(ListMusic);
 export const RadioIcon = icon(Radio);
 export const SendIcon = icon(ArrowRight);
+/** The centered launcher's round send button (Preferences.launcherStyle). */
+export const SendUpIcon = icon(ArrowUp);
+/** Resuming one of the folder's Claude Code conversations. */
+export const HistoryIcon = icon(History);
+/** How the launcher is laid out (Preferences.launcherStyle). */
+export const LauncherIcon = icon(PanelsTopLeft);
 export const MaximizeIcon = icon(Maximize2);
 export const MinimizeIcon = icon(Minimize2);
 export const TuneIcon = icon(SlidersHorizontal);

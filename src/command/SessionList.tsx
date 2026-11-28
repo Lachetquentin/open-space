@@ -44,6 +44,7 @@ export function SessionList() {
     setNarrow(!narrow);
   };
   const { project } = useProjects();
+  const saved = useSessions((s) => s.preferences.projects);
   const [grouping, setGrouping] = useState<ListGrouping>(() => {
     const stored = readPreference<string>('listGrouping', 'state');
     return LIST_GROUPINGS.find((each) => each === stored) ?? 'state';
@@ -58,7 +59,7 @@ export function SessionList() {
     [sessions, seen, project, grouping, keptNow, later],
   );
   // the digits of Alt+1…9 follow the header's projects (by name), not the list's order, which moves with who waits
-  const projects = useMemo(() => projectsOf(Object.values(sessions), seen), [sessions, seen]);
+  const projects = useMemo(() => projectsOf(Object.values(sessions), seen, saved), [sessions, seen, saved]);
   const open = (id: string) => {
     const waiting = groups.find((group) => group.state === 'waiting')?.sessions ?? [];
     const index = waiting.findIndex((session) => session.id === id);

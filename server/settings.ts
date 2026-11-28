@@ -11,8 +11,9 @@ import { hooksAddressOf } from '../shared/triggers.ts';
 import { NOTE_NAME } from '../shared/journal.ts';
 import { parseClaudeSettings } from '../shared/claude-settings.ts';
 import { parseDashboards } from '../shared/dashboards.ts';
-import { ACCOUNTS_BROWSERS, DEFAULT_PERMISSION_MODE, EFFORTS, GLASS_OPACITY, IDLE_COMPACT_MINUTES, ISOLATE_MODES, isPermissionMode, TIME_FORMATS, WINDOW_STYLES, type Preferences } from '../shared/protocol.ts';
+import { ACCOUNTS_BROWSERS, DEFAULT_PERMISSION_MODE, EFFORTS, GLASS_OPACITY, IDLE_COMPACT_MINUTES, ISOLATE_MODES, isPermissionMode, LAUNCHER_STYLES, TIME_FORMATS, WINDOW_STYLES, type Preferences, type SavedProject } from '../shared/protocol.ts';
 import { asArray, isJson } from './json.ts';
+import { resolveAllowedDirectory } from './paths.ts';
 import { expandHomePath, isFullPath } from '../shared/paths.ts';
 import { TERMINALS, type TerminalKind } from '../shared/terminal.ts';
 
@@ -50,6 +51,33 @@ export const MAX_AGENT_NOTE = 600;
 export const MAX_TAG_RULE = 300;
 const MAX_ROOTS = 20;
 const MAX_FAVORITE_NOTES = 200;
+const MAX_PROJECTS = 100;
+
+/** The saved projects found in untrusted JSON: full folders ("~" is the home), each once, pinned only when said so. */
+function parseSavedProjects(raw: unknown[], home: string): SavedProject[] {
+  const projects: SavedProject[] = [];
+  for (const entry of raw) {
+    if (!isJson(entry) || typeof entry.folder !== 'string' || !isFullPath(entry.folder.trim())) continue;
+    const folder = path.resolve(expandHomePath(entry.folder.trim(), home));
+    if (!projects.some((project) => project.folder === folder)) projects.push({ folder, ...(entry.pinned === true ? { pinned: true } : {}) });
+  }
+  return projects.slice(0, MAX_PROJECTS);
+}
+
+/**
+ * The saved projects to keep: one already kept stays as it is (a folder out of reach for a while, an unplugged disk, is not
+ * lost to another setting's save); a new one only when its real folder lies inside the roots (server/paths.ts), under that
+ * real path. Each folder once.
+ */
+export function allowedProjects(projects: readonly SavedProject[], kept: readonly SavedProject[], roots: readonly string[], home = os.homedir()): SavedProject[] {
+  const known = new Set(kept.map((project) => project.folder));
+  const allowed: SavedProject[] = [];
+  for (const project of projects) {
+    const folder = known.has(project.folder) ? project.folder : resolveAllowedDirectory(project.folder, roots, home);
+    if (folder && !allowed.some((other) => other.folder === folder)) allowed.push({ ...project, folder });
+  }
+  return allowed;
+}
 
 /** The settings found in untrusted JSON: what is valid is kept, the rest left out. Folders must be absolute (the journal's and the numbers file's may start with "~"). */
 export function parsePreferences(raw: unknown, home = os.homedir()): Partial<Preferences> {
@@ -64,6 +92,7 @@ export function parsePreferences(raw: unknown, home = os.homedir()): Partial<Pre
   if (typeof raw.glassOpacity === 'number' && raw.glassOpacity >= GLASS_OPACITY.min && raw.glassOpacity <= GLASS_OPACITY.max) found.glassOpacity = raw.glassOpacity;
   if (IDLE_COMPACT_MINUTES.some((minutes) => minutes === raw.idleCompact)) found.idleCompact = raw.idleCompact as number;
   if (WINDOW_STYLES.some((style) => style === raw.windowStyle)) found.windowStyle = raw.windowStyle as Preferences['windowStyle'];
+  if (LAUNCHER_STYLES.some((style) => style === raw.launcherStyle)) found.launcherStyle = raw.launcherStyle as Preferences['launcherStyle'];
   if (TIME_FORMATS.some((format) => format === raw.timeFormat)) found.timeFormat = raw.timeFormat as Preferences['timeFormat'];
   if (ISOLATE_MODES.some((mode) => mode === raw.isolate)) found.isolate = raw.isolate as Preferences['isolate'];
   if (ACCOUNTS_BROWSERS.some((browser) => browser === raw.accountsBrowser)) found.accountsBrowser = raw.accountsBrowser as Preferences['accountsBrowser'];
@@ -84,6 +113,7 @@ export function parsePreferences(raw: unknown, home = os.homedir()): Partial<Pre
     const folder = expandHomePath(raw.journalFolder.trim(), home);
     if (path.isAbsolute(folder) && folder.length <= 1000) found.journalFolder = path.resolve(folder);
   }
+  if (Array.isArray(raw.projects)) found.projects = parseSavedProjects(asArray(raw.projects), home);
   if (Array.isArray(raw.favoriteNotes)) found.favoriteNotes = [...new Set(asArray(raw.favoriteNotes).filter((name): name is string => typeof name === 'string' && NOTE_NAME.test(name)))].slice(0, MAX_FAVORITE_NOTES);
   if (typeof raw.automataFolder === 'string' && isAutomataFolder(raw.automataFolder)) {
     const folder = expandHomePath(raw.automataFolder.trim(), home);

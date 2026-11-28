@@ -52,7 +52,7 @@ import { migrateShelf, pruneShelf, readVaultOwners, Vault, VaultShelf, writeVaul
 import { projectOf } from './worktrees.ts';
 import { ExternalKey, handleMcp, MCP_SETTINGS, messengerMcpKey, openSpaceMcpConfig, sessionMcpKey, type OpenSpaceApi } from './mcp.ts';
 import { parseTriggerInput, ROLE_NAME, type TriggersState } from '../shared/triggers.ts';
-import { parsePreferences } from './settings.ts';
+import { allowedProjects, parsePreferences } from './settings.ts';
 import { controlMusic, installedMusicApps, musicLibrary, nowPlaying } from './music.ts';
 import { modKey, Mods, modsFolder } from './mods.ts';
 import { saveAvatar } from './crew.ts';
@@ -349,10 +349,13 @@ const triggersMessage = (): ServerMessage => {
 
 /** Changes settings the page or the MCP server sent (already checked), and tells every page. */
 async function applyPreferences(changes: Partial<typeof settings.preferences>) {
-  const { roots, ...rest } = changes;
+  const { roots, projects, ...rest } = changes;
   const before = settings.preferences.claude;
   const accountsBefore = settings.preferences.accountsBrowser;
-  await settings.update({ ...rest, ...(roots && !config.rootsLocked ? { roots } : {}) });
+  await settings.update({
+    ...rest, ...(roots && !config.rootsLocked ? { roots } : {}),
+    ...(projects ? { projects: allowedProjects(projects, settings.preferences.projects ?? [], config.roots) } : {}),
+  });
   setServerLanguage(settings.preferences.language ?? 'fr');
   applyRoots();
   broadcast(preferencesMessage());
@@ -640,7 +643,8 @@ async function handle(message: ClientMessage, send: (message: ServerMessage) => 
     case 'preferences': await applyPreferences(message.preferences); break;
     case 'onboard': {
       await crew.setSelf(message.self.name, message.self.look, message.self.birthday);
-      const { roots, ...rest } = message.preferences;
+      // projects are saved from the launcher (applyPreferences), checked against the roots there
+      const { roots, projects: _, ...rest } = message.preferences;
       await settings.update({ ...rest, ...(!config.rootsLocked ? { roots } : {}) }, true);
       setServerLanguage(settings.preferences.language ?? 'fr');
       applyRoots();

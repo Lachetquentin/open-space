@@ -43,6 +43,7 @@ export const common: Dictionary['common'] = {
     allProjects: 'All',
     allProjectsTitle: 'The sessions of every project',
     projectTitle: (folder, waiting) => `${folder}: its sessions in sight, the others as ghosts${waiting ? ' (one waits for you)' : ''}`,
+    projectEmptyTitle: (name) => `Start a session in ${name}`,
     roomSessions: (room, sessions) => `${room}: ${sessions}`,
     session: 'session',
     sessions: 'sessions',

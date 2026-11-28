@@ -12,7 +12,7 @@ import { appendFile, cp, mkdir, readdir, readFile, rename, rm, rmdir, stat } fro
 import os from 'node:os';
 import path from 'node:path';
 import { BRANCH_PREFIX, WORKTREES_FOLDER, isInside, worktreeNames } from '../shared/worktrees.ts';
-import type { BranchRow, BranchStatus, FolderRepo, MergeProblem } from '../shared/protocol.ts';
+import type { BranchRow, BranchStatus, FolderRepo, MergeProblem, ReusableBranch } from '../shared/protocol.ts';
 import { lastBranch, projectFolder } from './conversations.ts';
 import { st } from './i18n/index.ts';
 
@@ -420,6 +420,19 @@ export async function deleteBranch(mainRoot: string, branch: string, mergedInto?
 
 /** The branches Open Space may delete: its own, and those `claude --worktree` makes; any other is the user's. */
 const isSessionBranch = (branch: string) => branch.startsWith(BRANCH_PREFIX) || branch.startsWith('worktree-');
+
+/** How many branches the launcher offers to go on with. */
+const MAX_REUSABLE = 10;
+
+/**
+ * The branches of the cleaning panel a new session can work on (see ReusableBranch), newest first: Open Space's and
+ * Claude Code's only, none in use by a program still running nor `taken` (a session works on it).
+ */
+export function reusableBranches(rows: readonly BranchRow[], taken: (row: BranchRow) => boolean): ReusableBranch[] {
+  return rows.filter((row) => row.branch && isSessionBranch(row.branch) && !row.inUse && !taken(row))
+    .sort((a, b) => b.at - a.at).slice(0, MAX_REUSABLE)
+    .map((row) => ({ branch: row.branch, base: row.base, at: row.at, ...(row.name ? { name: row.name } : {}) }));
+}
 
 /** The branch a kept conversation worked on, when it has no worktree any more: it gets one again when resumed. */
 export async function keptBranchOf(mainRoot: string, conversation: string): Promise<{ branch: string; note: BranchNote } | null> {

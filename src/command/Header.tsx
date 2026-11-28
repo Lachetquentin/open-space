@@ -7,7 +7,7 @@ import { roomSessions, type RoomKind } from '../room/cast.ts';
 import { seatedRuns } from '../state/automata.ts';
 import { selectOutdatedCount, useSessions, type View } from '../state/sessions.ts';
 import { useProjects } from '../state/useProjects.ts';
-import { AutomatonIcon, DashboardIcon, DeskIcon, FocusIcon, SearchIcon, SettingsIcon, SofaIcon } from './Icons.tsx';
+import { AutomatonIcon, DashboardIcon, DeskIcon, FocusIcon, PlusIcon, SearchIcon, SettingsIcon, SofaIcon } from './Icons.tsx';
 import { ModsButton } from './ModsPanel.tsx';
 import { QuotaMeter } from './QuotaMeter.tsx';
 import { Radio } from './Radio.tsx';
@@ -105,6 +105,7 @@ export function Header() {
 function ProjectFilter() {
   const { projects, project } = useProjects();
   const setProject = useSessions((s) => s.setProject);
+  const openNewSession = useSessions((s) => s.openNewSession);
   // the pill scrolls when the projects overflow it: the one picked stays in sight
   const pill = useRef<HTMLDivElement>(null);
   useEffect(() => { pill.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [project, projects.length]);
@@ -117,7 +118,12 @@ function ProjectFilter() {
         <button type="button" aria-pressed={project === ''} title={words.allProjectsTitle} onClick={() => setProject('')}>
           {words.allProjects}<span className="cp-header__room-count">{total}</span>
         </button>
-        {projects.map(({ folder, name, count, waiting }) => (
+        {projects.map(({ folder, name, count, waiting }) => count === 0 ? (
+          // a pinned project without a session has nothing to filter: its pill starts one there
+          <button key={folder} type="button" className="cp-header__project-empty" title={words.projectEmptyTitle(name)} onClick={() => openNewSession({ folder })}>
+            {name}<PlusIcon />
+          </button>
+        ) : (
           <button
             key={folder} type="button" aria-pressed={project === folder} title={words.projectTitle(folder, waiting)}
             onClick={() => setProject(project === folder ? '' : folder)}

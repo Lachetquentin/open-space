@@ -158,6 +158,11 @@ describe('parseClientMessage', () => {
     assert.deepEqual(parseClientMessage({ t: 'create', options: { cwd: '/p', isolate: { base: 'fonctionnalité' } } }), { t: 'create', options: { cwd: '/p', isolate: { base: 'fonctionnalité' } } });
     assert.equal(parseClientMessage({ t: 'create', options: { cwd: '/p', isolate: { base: 'a b' } } }), null);
     assert.equal(parseClientMessage({ t: 'create', options: { cwd: '/p', isolate: { base: 'a\nb' } } }), null);
+    // a branch to go on with, under the same rule as a base, and never with a base or a conversation to resume
+    assert.deepEqual(parseClientMessage({ t: 'create', options: { cwd: '/p', isolate: { branch: 'os/lina-pay' } } }), { t: 'create', options: { cwd: '/p', isolate: { branch: 'os/lina-pay' } } });
+    assert.equal(parseClientMessage({ t: 'create', options: { cwd: '/p', isolate: { branch: '--force' } } }), null);
+    assert.equal(parseClientMessage({ t: 'create', options: { cwd: '/p', isolate: { branch: 'os/lina-pay', base: 'main' } } }), null);
+    assert.equal(parseClientMessage({ t: 'create', options: { cwd: '/p', resumeId: '6f1c2d3e-0000-4000-8000-000000000001', isolate: { branch: 'os/lina-pay' } } }), null);
     assert.deepEqual(parseClientMessage({ t: 'forget', sessionId: id, branch: 'keep' }), { t: 'forget', sessionId: id, branch: 'keep' });
     assert.equal(parseClientMessage({ t: 'forget', sessionId: id, branch: 'burn' }), null);
     assert.deepEqual(parseClientMessage({ t: 'branch', sessionId: id, action: 'merge' }), { t: 'branch', sessionId: id, action: 'merge' });

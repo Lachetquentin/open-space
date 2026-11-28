@@ -189,7 +189,7 @@ export function App() {
       // Not while typing: on a Mac, Alt+digit types characters ({ on a French keyboard).
       const digit = /^Digit([1-9])$/.exec(e.code);
       if (digit && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && !isTyping(e.target) && !document.querySelector('dialog[open]')) {
-        const target = projectsOf(Object.values(state.sessions), state.seen)[Number(digit[1]) - 1];
+        const target = projectsOf(Object.values(state.sessions), state.seen, state.preferences.projects)[Number(digit[1]) - 1];
         if (target) { e.preventDefault(); state.openNewSession({ folder: target.folder }); }
         return;
       }
@@ -199,7 +199,7 @@ export function App() {
         const { preferences } = state;
         // the dashboards hold no session: back to the office to write it
         if (state.view === 'dashboards') state.setView('salle');
-        if (e.shiftKey) state.createSession({ cwd: defaultFolder(state.roots, activeProject(projectsOf(Object.values(state.sessions), state.seen), state.project) || preferences.defaultFolder), model: preferences.model, ...(preferences.effort ? { effort: preferences.effort } : {}), permissionMode: preferences.permissionMode });
+        if (e.shiftKey) state.createSession({ cwd: defaultFolder(state.roots, activeProject(projectsOf(Object.values(state.sessions), state.seen, preferences.projects), state.project) || preferences.defaultFolder), model: preferences.model, ...(preferences.effort ? { effort: preferences.effort } : {}), permissionMode: preferences.permissionMode });
         else state.openNewSession({});
       }
     };
