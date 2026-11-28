@@ -34,6 +34,12 @@ export const since = (from: number, now: number) => t.common.since(formatDuratio
 /** A file's size, in kilobytes or megabytes. */
 export const formatSize = (size: number) => new Intl.NumberFormat(locale(), { style: 'unit', unit: size >= 1_000_000 ? 'megabyte' : 'kilobyte', maximumFractionDigits: 1 }).format(size >= 1_000_000 ? size / 1_000_000 : Math.max(0.1, size / 1000));
 
+/** The first line of an error text, cut with an ellipsis past `max` characters: what fits a tooltip. */
+export function shortReason(text: string, max = 120): string {
+  const line = text.trim().split(/\r?\n/, 1)[0] ?? '';
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
 export const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
 /** "~/code/" and "app.ts": a path cut after its last / or \\. */

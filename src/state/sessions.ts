@@ -244,6 +244,8 @@ export interface CommandPostState {
   claudeUpdate: ClaudeUpdate | null;
   /** the latest Claude Code on the npm registry, while the user's check is on (Preferences.claudeUpdateCheck; null: unknown or off) */
   claudeLatest: string | null;
+  /** the `claudeLatest` current when `claude update` last said it is up to date: that latest is not offered again, a newer one is */
+  claudeUpToDateFor: string | null;
   /** who Claude Code is signed in as (null until the server has asked it) */
   claudeAccount: ClaudeAccount | null;
   /** a new Open Space the Mac app found (null outside the app, or when there is none) */
@@ -536,6 +538,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   claudeDefaults: { current: {}, outputStyles: [] },
   claudeUpdate: null,
   claudeLatest: null,
+  claudeUpToDateFor: null,
   claudeAccount: null,
   appUpdate: null,
   rootSuggestions: null,
@@ -677,7 +680,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
       case 'models': set({ models: message.models }); break;
       case 'directories': set({ directories: message.directories }); break;
       case 'claude': set({ claude: message.claude }); break;
-      case 'claudeUpdate': set({ claudeUpdate: message.update }); break;
+      case 'claudeUpdate': set({ claudeUpdate: message.update, ...(message.update.state === 'upToDate' ? { claudeUpToDateFor: s.claudeLatest } : {}) }); break;
       case 'claudeLatest': set({ claudeLatest: message.version }); break;
       case 'claudeAccount': set({ claudeAccount: message.account }); break;
       case 'appUpdate': set({ appUpdate: message.update }); break;
@@ -1165,10 +1168,10 @@ export const outdatedSessions = (sessions: readonly SessionInfo[], version: stri
   version ? sessions.filter((session) => session.claudeVersion !== undefined && session.claudeVersion !== version) : [];
 /**
  * The newer Claude Code the registry has than the one installed (Preferences.claudeUpdateCheck), or null; also null once
- * `claude update` said this version is up to date (its release channel may lag behind npm's latest).
+ * `claude update` said this version is up to date (its release channel may lag behind npm's latest), until npm has a newer one.
  */
 export const selectClaudeNewer = (state: CommandPostState) => {
   const installed = state.claude?.found ? state.claude.version : undefined;
   if (!installed || !state.claudeLatest || !isNewerVersion(state.claudeLatest, installed)) return null;
-  return state.claudeUpdate?.state === 'upToDate' && state.claudeUpdate.version === installed ? null : state.claudeLatest;
+  return state.claudeUpdate?.state === 'upToDate' && state.claudeUpdate.version === installed && state.claudeUpToDateFor === state.claudeLatest ? null : state.claudeLatest;
 };

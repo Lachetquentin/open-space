@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { busySessions } from '../../shared/app-update.ts';
 import { locale, t } from '../i18n/index.ts';
@@ -15,6 +15,9 @@ export function useAppRestart() {
   const [warned, setWarned] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const words = t.settings.prefs.update;
+  // a restart that came to nothing (the update left `ready`) can be asked again
+  const state = useSessions((s) => s.appUpdate?.state);
+  useEffect(() => { setRestarting(false); }, [state]);
   const restart = () => { setWarned(false); setRestarting(true); useSessions.getState().restartApp(); };
   const busy = busySessions(Object.values(sessions));
   const ask = () => (busy.length ? setWarned(true) : restart());

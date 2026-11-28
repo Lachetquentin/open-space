@@ -4,6 +4,8 @@ import { CLAUDE_LATEST_URL, parseVersion } from '../shared/claude-version.ts';
 import { isJson } from './json.ts';
 
 export const CLAUDE_LATEST_EVERY_MS = 6 * 60 * 60 * 1000;
+/** after a failed request, one more try this much later (not stacked, and not repeated: the 6 h tick comes next) */
+export const CLAUDE_LATEST_RETRY_MS = 5 * 60 * 1000;
 const TIMEOUT_MS = 10_000;
 
 type Fetch = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
@@ -21,6 +23,7 @@ export class ClaudeLatest {
   /** the latest version the registry gave, kept through a failed request */
   version: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private retry: ReturnType<typeof setTimeout> | null = null;
   private deps: ClaudeLatestDeps;
 
   constructor(deps: ClaudeLatestDeps) {
@@ -32,6 +35,8 @@ export class ClaudeLatest {
     if (!this.deps.enabled()) {
       if (this.timer) clearInterval(this.timer);
       this.timer = null;
+      if (this.retry) clearTimeout(this.retry);
+      this.retry = null;
       if (this.version === null) return;
       this.version = null;
       this.deps.onChange(null);
@@ -43,7 +48,7 @@ export class ClaudeLatest {
     void this.check();
   }
 
-  private async check() {
+  private async check(retrying = false) {
     if (!this.deps.enabled()) return;
     try {
       const fetcher: Fetch = this.deps.fetch ?? fetch;
@@ -58,6 +63,9 @@ export class ClaudeLatest {
       this.deps.onChange(version);
     } catch (error) {
       this.deps.log('cannot read the latest Claude Code version', error);
+      if (retrying || this.retry) return;
+      this.retry = setTimeout(() => { this.retry = null; void this.check(true); }, CLAUDE_LATEST_RETRY_MS);
+      this.retry.unref?.();
     }
   }
 }

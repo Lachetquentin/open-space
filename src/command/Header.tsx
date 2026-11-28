@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { hasNews, unreadMods } from '../../shared/dashboards.ts';
 import { Tooltip } from '../design/Tooltip.tsx';
 import { locale, plural, t } from '../i18n/index.ts';
+import { shortReason } from '../lib/format.ts';
 import { MODIFIER } from '../lib/platform.ts';
 import { roomSessions, type RoomKind } from '../room/cast.ts';
 import { seatedRuns } from '../state/automata.ts';
@@ -99,21 +101,31 @@ export function Header() {
   );
 }
 
-/** A new Open Space the Mac app is downloading (a click shows it in the settings), then ready: a click restarts on it, after the same warning as the settings when sessions are at work. */
+/** A new Open Space the Mac app is downloading (a click shows it in the settings), then ready: a click restarts on it. */
 function AppUpdateButton() {
   const update = useSessions((s) => s.appUpdate);
-  const { ask, restarting, warning } = useAppRestart();
   const words = t.common.header;
-  if (update?.state !== 'downloading' && update?.state !== 'ready') return null;
-  const ready = update.state === 'ready';
-  const text = ready ? words.appReady(update.version) : words.appDownloading(update.version, new Intl.NumberFormat(locale(), { style: 'percent' }).format(update.percent / 100));
+  if (update?.state === 'ready') return <AppReadyButton version={update.version} />;
+  if (update?.state !== 'downloading') return null;
+  const text = words.appDownloading(update.version, new Intl.NumberFormat(locale(), { style: 'percent' }).format(update.percent / 100));
+  return (
+    <Tooltip text={text}>
+      <button type="button" className="cp-icon-button cp-header__update" aria-label={text} onClick={() => useSessions.getState().openSettings(true, 'about')}>
+        <DownloadIcon />
+      </button>
+    </Tooltip>
+  );
+}
+
+/** The restart on the new Open Space, after the same warning as the settings when sessions are at work (its own component: it follows the sessions only once ready). */
+function AppReadyButton({ version }: { version: string }) {
+  const { ask, restarting, warning } = useAppRestart();
+  const text = t.common.header.appReady(version);
+  // aria-disabled, not disabled: the tooltip still shows while it restarts
   return (
     <>
       <Tooltip text={text}>
-        <button
-          type="button" className="cp-icon-button cp-header__update" data-news={ready || undefined} aria-label={text}
-          disabled={restarting} aria-busy={restarting || undefined} onClick={() => (ready ? ask() : useSessions.getState().openSettings(true, 'about'))}
-        >
+        <button type="button" className="cp-icon-button cp-header__update" data-news aria-label={text} aria-disabled={restarting || undefined} aria-busy={restarting || undefined} onClick={() => { if (!restarting) ask(); }}>
           <DownloadIcon />
         </button>
       </Tooltip>
@@ -130,13 +142,16 @@ function ClaudeUpdateButton() {
   const newer = useSessions(selectClaudeNewer);
   const installed = useSessions((s) => s.claude?.version ?? '');
   const update = useSessions((s) => s.claudeUpdate);
-  const sessions = useSessions((s) => s.sessions);
-  const outdated = useMemo(() => outdatedSessions(Object.values(sessions), installed), [sessions, installed]);
+  // only how many run the old version, and whether one waits: the header does not redraw at each session event
+  const { count, waiting } = useSessions(useShallow((s) => {
+    const outdated = outdatedSessions(Object.values(s.sessions), s.claude?.version);
+    return { count: outdated.length, waiting: outdated.some((session) => session.state === 'wait') };
+  }));
   const words = t.common.header;
   const store = useSessions.getState;
   if (newer) {
     const busy = update?.state === 'checking';
-    const text = busy ? words.claudeUpdating : update?.state === 'failed' ? words.claudeFailed(update.text) : words.claudeNewer(newer, installed);
+    const text = busy ? words.claudeUpdating : update?.state === 'failed' ? words.claudeFailed(shortReason(update.text)) : words.claudeNewer(newer, installed);
     // not disabled while it installs, so its tooltip still says so
     return (
       <Tooltip text={text}>
@@ -146,14 +161,13 @@ function ClaudeUpdateButton() {
       </Tooltip>
     );
   }
-  if (!outdated.length) return null;
+  if (!count) return null;
   // like the settings' banner: only the waiting ones restart, the others switch at their next pause
-  const waiting = outdated.some((session) => session.state === 'wait');
-  const text = waiting ? words.claudeOutdated(installed, outdated.length) : words.claudeOutdatedBusy(installed, outdated.length);
+  const text = waiting ? words.claudeOutdated(installed, count) : words.claudeOutdatedBusy(installed, count);
   return (
     <Tooltip text={text}>
       <button type="button" className="cp-icon-button cp-header__update" data-news aria-label={text} onClick={() => (waiting ? store().restartOutdated() : store().openSettings(true, 'about'))}>
-        <TerminalIcon />
+        <RefreshIcon />
       </button>
     </Tooltip>
   );
