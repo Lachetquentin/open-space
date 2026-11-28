@@ -45,7 +45,8 @@ export function BranchNewsItem({ item, sessionId, speaker }: { item: FeedItem & 
   );
 }
 
-const problemText = (problem: MergeProblem, session: SessionInfo) => {
+/** Why a merge of the session's branch did not go through, in a sentence. */
+export const problemText = (problem: MergeProblem, session: SessionInfo) => {
   const words = t.branches.card.problems;
   const base = session.worktree?.base ?? '';
   switch (problem.kind) {

@@ -111,6 +111,8 @@ export interface CommandPostState {
   searchResults: { id: number; query: string; hits: SearchHit[] } | null;
   /** the whiteboard's notes are open (a click on the whiteboard of the room) */
   boardOpen: boolean;
+  /** the agents' board is open: every session in a column by where its work stands (KanbanDialog.tsx) */
+  kanbanOpen: boolean;
   /** the journal folder and its notes, as last listed */
   notes: { folder: string; files: NoteFile[] } | null;
   /** the whiteboard's search: what was looked for, and the notes found */
@@ -376,6 +378,7 @@ export interface CommandPostState {
   /** asks the Mac app to look for a new Open Space now */
   checkApp: () => void;
   openBoard: (open: boolean) => void;
+  openKanban: (open: boolean) => void;
   /** opens the automatons' panel (on a run, whose thread is then asked for) or closes it */
   /** `fresh`: on the page of a new trigger */
   openAutomata: (open: boolean, runId?: string | null, agent?: string | null, fresh?: boolean) => void;
@@ -463,6 +466,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   costs: null,
   searchResults: null,
   boardOpen: false,
+  kanbanOpen: false,
   notes: null,
   noteMatches: null,
   lastNote: null,
@@ -1075,6 +1079,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   // opened without a section: from the top (General), not where they were last left
   openSettings: (open, section, row) => set((state) => ({ settingsOpen: open, settingsRow: row ?? null, settingsSection: section ?? (open && !state.settingsOpen ? 'general' : state.settingsSection) })),
   openBoard: (open) => set({ boardOpen: open, ...(open ? {} : { lastNote: null }) }),
+  openKanban: (open) => set({ kanbanOpen: open }),
   openAutomata: (open, runId = null, agent = null, fresh = false) => {
     // a thread is read again each time it is shown: what was kept may have missed events while the page was away
     set((state) => ({ automataOpen: open, automataFresh: open && fresh, automatonId: open ? runId : null, automatonAgent: open && runId ? agent : null, automatonLogs: runId ? Object.fromEntries(Object.entries(state.automatonLogs).filter(([id]) => id !== runId)) : state.automatonLogs }));

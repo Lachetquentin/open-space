@@ -7,7 +7,7 @@ import { roomSessions, type RoomKind } from '../room/cast.ts';
 import { seatedRuns } from '../state/automata.ts';
 import { selectOutdatedCount, useSessions, type View } from '../state/sessions.ts';
 import { useProjects } from '../state/useProjects.ts';
-import { AutomatonIcon, DashboardIcon, DeskIcon, FocusIcon, SearchIcon, SettingsIcon, SofaIcon } from './Icons.tsx';
+import { AutomatonIcon, DashboardIcon, DeskIcon, FocusIcon, KanbanIcon, SearchIcon, SettingsIcon, SofaIcon } from './Icons.tsx';
 import { ModsButton } from './ModsPanel.tsx';
 import { QuotaMeter } from './QuotaMeter.tsx';
 import { Radio } from './Radio.tsx';
@@ -19,6 +19,7 @@ const VIEWS = [['salle', DeskIcon, 'office'], ['repos', SofaIcon, 'lounge'], ['a
 const PALETTE_KEYS = `${MODIFIER} K`;
 const FOCUS_KEYS = `${MODIFIER} .`;
 const SETTINGS_KEYS = `${MODIFIER} ,`;
+const KANBAN_KEYS = `${MODIFIER} B`;
 export const DASHBOARDS_BAR = 'cp-dashboards-bar';
 
 export function Header() {
@@ -29,6 +30,8 @@ export function Header() {
   const connection = useSessions((s) => s.connection);
   const openPalette = useSessions((s) => s.openPalette);
   const openSettings = useSessions((s) => s.openSettings);
+  const openKanban = useSessions((s) => s.openKanban);
+  const kanbanOpen = useSessions((s) => s.kanbanOpen);
   // off in the settings, the radio leaves its room to the rest
   const radio = useSessions((s) => s.preferences.radio !== false);
   const automata = useSessions((s) => s.automata);
@@ -66,6 +69,11 @@ export function Header() {
           <Tooltip text={dashboardsNews ? words.dashboardsNews : words.dashboardsTitle}>
             <button type="button" aria-pressed={view === 'dashboards'} aria-label={dashboardsNews ? words.dashboardsNews : words.dashboards} data-news={dashboardsNews || undefined} onClick={() => setView('dashboards')}>
               <DashboardIcon />
+            </button>
+          </Tooltip>
+          <Tooltip text={`${t.kanban.title} (${KANBAN_KEYS})`}>
+            <button type="button" aria-pressed={kanbanOpen} aria-label={t.kanban.title} onClick={() => openKanban(!kanbanOpen)}>
+              <KanbanIcon />
             </button>
           </Tooltip>
           {!phone && <span className="cp-header__divider" aria-hidden="true" />}

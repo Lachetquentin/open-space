@@ -3451,3 +3451,54 @@ a.cp-button { text-decoration: none; }
 .cp-app[data-device='phone'] .cp-detail__title h2 { min-width: 0; font-size: var(--text-lg); }
 .cp-app[data-device='phone'] .cp-detail__title > .cp-badge { flex: none; }
 .cp-app[data-device='phone'] .cp-detail__title .cp-detail__controls { margin-inline-start: auto; }
+
+/* ── The agents' board (KanbanDialog.tsx): most of the window, a column per stage of the work, each scrolling on its own ── */
+.cp-modal[data-look='full'] { width: calc(100vw - 2 * var(--gutter)); height: calc(100dvh - 2 * var(--gutter)); max-width: none; max-height: none; overflow: hidden; }
+.cp-modal[data-look='full'][open] { display: flex; }
+.cp-modal[data-look='full'] .cp-modal__body { flex: 1; min-width: 0; min-height: 0; display: flex; padding: 0; gap: 0; }
+.cp-kanban { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.cp-kanban__head {
+  flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5); border-bottom: var(--border-width) solid var(--color-border);
+}
+.cp-kanban__title { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--text-lg); }
+.cp-kanban__filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+.cp-kanban__filters select { width: auto; max-width: 16rem; }
+.cp-kanban__check { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--color-text-muted); cursor: pointer; }
+/* side by side, scrolled sideways when the window is too narrow for them all */
+.cp-kanban__columns {
+  flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(min(17rem, 85vw), 1fr); gap: var(--space-3);
+  padding: var(--space-4); overflow-x: auto; overscroll-behavior-x: contain;
+}
+/* each column's tone (--tone, from its data-tone) colours its dot, its cards' state and their border on hover; the sessions to ship take the accent */
+.cp-kanban__column {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-2); border-radius: var(--radius-lg); background: var(--color-surface-sunken);
+}
+.cp-kanban__column-title { flex: none; display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: 0 var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-bold); }
+.cp-kanban__dot { flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--tone, var(--color-accent)); }
+.cp-kanban__count { color: var(--color-text-muted); font-weight: var(--weight-regular); }
+.cp-kanban__cards { flex: 1; min-height: 0; margin: 0; padding: 0; list-style: none; display: grid; align-content: start; gap: var(--space-2); overflow-y: auto; }
+.cp-kanban__empty {
+  margin: 0; padding: var(--space-4) var(--space-2); text-align: center; font-size: var(--text-sm); color: var(--color-text-muted);
+  border: var(--border-width) dashed var(--color-border); border-radius: var(--radius-md);
+}
+.cp-kanban__card {
+  width: 100%; min-width: 0; display: grid; gap: var(--space-1); padding: var(--space-3); text-align: start;
+  border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-raised); color: var(--color-text);
+}
+.cp-kanban__card:hover { border-color: var(--tone, var(--color-accent)); }
+.cp-kanban__card-title { display: flex; align-items: center; gap: var(--space-1); min-width: 0; font-weight: var(--weight-bold); }
+.cp-kanban__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-kanban__tag, .cp-kanban__mark { flex: none; }
+.cp-kanban__mark { display: inline-flex; color: var(--color-text-muted); }
+.cp-kanban__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); min-width: 0; font-size: var(--text-xs); color: var(--color-text-muted); }
+.cp-kanban__meta > span { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; max-width: 100%; }
+.cp-kanban__meta .cp-icon, .cp-kanban__mark .cp-icon { width: 0.875rem; height: 0.875rem; }
+.cp-kanban__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-kanban__branch { font-family: var(--font-mono); }
+.cp-kanban__agents { color: var(--color-accent); }
+.cp-kanban__detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); color: var(--color-text-muted); }
+.cp-kanban__status { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); min-width: 0; font-size: var(--text-xs); }
+.cp-kanban__state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--weight-bold); color: var(--tone, var(--color-accent)); }
+.cp-kanban__time { flex: none; color: var(--color-text-muted); }

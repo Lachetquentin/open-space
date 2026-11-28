@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BoardDialog } from './command/BoardDialog.tsx';
 import { BranchesDialog } from './command/BranchesDialog.tsx';
+import { KanbanDialog } from './command/KanbanDialog.tsx';
 import { AutomataDialog } from './command/AutomataDialog.tsx';
 import { ModsDialog } from './command/ModsPanel.tsx';
 import { ModWindows } from './command/ModWindows.tsx';
@@ -133,6 +134,7 @@ export function App() {
       // by position of the key: Option changes what `e.key` says on a Mac
       if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyT') { e.preventDefault(); state.openTerminal(state.selectedId); return; }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); state.openPalette(!state.paletteOpen); return; }
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); state.openKanban(!state.kanbanOpen); return; }
       if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); state.openSettings(!state.settingsOpen); return; }
       if ((e.metaKey || e.ctrlKey) && e.key === '.') { e.preventDefault(); state.setView(state.view === 'focus' ? 'salle' : 'focus'); return; }
       // Cmd+F with a session open searches its thread (the browser's own search does not see folded actions)
@@ -247,6 +249,7 @@ export function App() {
       <CrewDialog />
       <SettingsDialog />
       <BoardDialog />
+      <KanbanDialog />
       <BranchesDialog />
       <AutomataDialog />
       <ModsDialog />

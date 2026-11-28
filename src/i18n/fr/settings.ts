@@ -232,6 +232,7 @@ export const settings = {
     },
     shortcuts: {
       search: 'Rechercher partout',
+      kanban: 'Suivi des agents',
       settings: 'Ouvrir les réglages',
       focus: 'Mode focus',
       terminal: 'Ouvrir un terminal',

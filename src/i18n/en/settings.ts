@@ -229,6 +229,7 @@ export const settings: Dictionary['settings'] = {
     },
     shortcuts: {
       search: 'Search everywhere',
+      kanban: 'Agent board',
       settings: 'Open settings',
       focus: 'Focus mode',
       terminal: 'Open a terminal',
