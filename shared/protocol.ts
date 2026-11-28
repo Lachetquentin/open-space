@@ -637,8 +637,8 @@ export const IDLE_COMPACT_MINUTES = [0, 15, 30, 60, 120, 240] as const;
 /** How the windows and the thread are dressed, whatever the room's theme: only a skin, every control stays (tokens.css, components.css). */
 export const WINDOW_STYLES = ['classic', 'match', 'terminal', 'hacker', 'neon', 'dungeon', 'space', 'beach', 'pirate', 'forest'] as const;
 export type WindowStyle = (typeof WINDOW_STYLES)[number];
-/** The launcher's layouts: 'classic', its field at the foot of the column; 'centered', a question and the field in the middle, its options in chips under it. */
-export const LAUNCHER_STYLES = ['classic', 'centered'] as const;
+/** The launcher's layouts: 'classic', its field at the foot of the column; 'streamlined', a question over the field and its options in chips under it, still at the foot of the column. */
+export const LAUNCHER_STYLES = ['classic', 'streamlined'] as const;
 export type LauncherStyle = (typeof LAUNCHER_STYLES)[number];
 /** A folder the user saved as a project, a real one inside the roots: in the launcher's list, and with its pill in the header even without a session when pinned. */
 export interface SavedProject { folder: string; pinned?: boolean }

@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BRANCH_PREFIX, workSlug } from '../../shared/worktrees.ts';
-import { PERMISSION_MODES, type Conversation, type Effort, type PermissionMode, type ReusableBranch, type TuneChange } from '../../shared/protocol.ts';
+import type { Conversation, Effort, PermissionMode, ReusableBranch, TuneChange } from '../../shared/protocol.ts';
 import { defaultFolder, folderName, formatAgo, homeRelative } from '../lib/format.ts';
 import { availability, stillFree } from '../state/availability.ts';
 import { useProjects } from '../state/useProjects.ts';
@@ -13,7 +13,7 @@ import { AttachButton, AttachmentStrip, DropOverlay } from './Attachments.tsx';
 import { CommandField, useMentionable } from './CommandField.tsx';
 import { t } from '../i18n/index.ts';
 import { useAttachments } from './useAttachments.ts';
-import { BranchIcon, ChevronDownIcon, CleanIcon, CloseIcon, FolderIcon, FolderOpenIcon, HistoryIcon, KeepIcon, RulesIcon, SendIcon, SendUpIcon, TagIcon } from './Icons.tsx';
+import { BranchIcon, ChevronDownIcon, CleanIcon, CloseIcon, FolderIcon, FolderOpenIcon, HistoryIcon, KeepIcon, SendIcon, SendUpIcon, TagIcon } from './Icons.tsx';
 import { sessionTagHues } from '../design/tag-colors.ts';
 import { FolderPicker } from './FolderPicker.tsx';
 import { Snippet } from './Snippet.tsx';
@@ -21,7 +21,6 @@ import { PersonPicker } from './PersonPicker.tsx';
 import { ProjectPicker } from './ProjectPicker.tsx';
 import { TuneMenu } from './TuneMenu.tsx';
 import { usePhone } from '../lib/phone.ts';
-import { modeLabel } from '../state/labels.ts';
 import { useDismiss } from './useDismiss.ts';
 
 
@@ -32,7 +31,7 @@ import { useDismiss } from './useDismiss.ts';
  * a window beside the open sessions (focus mode), it can be closed; `replacing`: the session the new one will take the
  * place of, when no room is left.
  * Two layouts of the same launcher (Preferences.launcherStyle): 'classic', the field at the foot of the column, and
- * 'centered', a question in the middle with the field under it and its options in chips; only the markup differs.
+ * 'streamlined', also at the foot of the column: a question, the field under it and its options in chips; only the markup differs.
  */
 export function Launcher({ onClose, replacing }: { onClose?: () => void; replacing?: string }) {
   const roots = useSessions((s) => s.roots);
@@ -97,7 +96,7 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
   // a branch of the folder to go on with ("Previous worktree" / "or go on with a kept branch"), while the server still offers it
   const [reuse, setReuse] = useState<{ cwd: string; branch: string } | null>(null);
   const reusable = repo?.reusable ?? [];
-  const centered = preferences.launcherStyle === 'centered';
+  const streamlined = preferences.launcherStyle === 'streamlined';
   // any new choice of workspace forgets the branch that is gone (and its notice)
   const chooseIsolated = (next: boolean) => { setIsolateChoice({ cwd, isolated: next }); if (!next) setReuse(null); };
   const { branch: reused, gone } = reuseChoice(reuse, cwd, isolated, repo);
@@ -172,34 +171,35 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
       <CleanIcon />{branchWords.tidy(repo.merged, folderName(repo.root))} <button type="button" className="cp-link" onClick={() => openBranches(cwd)}>{branchWords.tidyAction}</button>
     </p>
   );
-  const placeholder = resuming ? (resumeId ? words.placeholderResume : words.placeholderPickFirst) : centered ? words.placeholderAsk : phone ? words.placeholderShort : words.placeholder;
+  const placeholder = resuming ? (resumeId ? words.placeholderResume : words.placeholderPickFirst) : streamlined ? words.placeholderAsk : phone ? words.placeholderShort : words.placeholder;
   const commandField = (
     <CommandField
       ref={field} id="launcher-field" label={words.fieldLabel} value={text} onChange={setText} onSubmit={() => { if (text.trim() || attachments.items.length) start(); }}
       onPaste={attachments.onPaste} people={mentionable} paths={{ cwd }} placeholder={placeholder}
     />
   );
-  // the centered launcher chooses the workspace in its own chip, under the field
-  const tuneMenu = <TuneMenu tuning={{ model, effort, ultracode, fastMode, permissionMode }} cwd={cwd} onChange={tune} isolation={canIsolate && !centered ? { isolated, onChange: chooseIsolated } : undefined} compact />;
+  // the streamlined launcher chooses the workspace in its own chip, under the field
+  const tuneMenu = <TuneMenu tuning={{ model, effort, ultracode, fastMode, permissionMode }} cwd={cwd} onChange={tune} isolation={canIsolate && !streamlined ? { isolated, onChange: chooseIsolated } : undefined} compact />;
   const personPicker = people.length > 0 && <PersonPicker people={people} chosen={person} onChoose={setAsked} />;
   const folderPicker = <FolderPicker directories={directories} value={folder} onChange={setFolder} placeholder={homeRelative(startFolder)} />;
   const attachButton = <AttachButton attachments={attachments} className="cp-icon-button cp-launcher__attach" />;
   const submit = (event: FormEvent) => { event.preventDefault(); start(); };
   const sendLabel = resuming ? words.resume : words.start;
 
-  if (centered) {
+  if (streamlined) {
     const projectName = folderName(cwd);
     return (
-      <aside className="cp-launcher" data-style="centered" aria-label={words.label} {...attachments.dropTarget}>
+      <aside className="cp-launcher" data-style="streamlined" aria-label={words.label} {...attachments.dropTarget}>
         <DropOverlay attachments={attachments} />
+        {closeButton}
         <div className="cp-launcher__center">
-          {closeButton}
+          {/* the conversations fill what is left above the question, as the classic launcher's body does */}
+          {resumeList && <div className="cp-launcher__body">{resumeList}</div>}
           <header className="cp-launcher__hero">
             {projectName ? <ProjectPicker cwd={cwd} name={projectName} before={words.buildIn} after={words.buildEnd} onPick={setFolder} /> : <h2>{words.buildAnywhere}</h2>}
             <button type="button" className="cp-link cp-launcher__pick" onClick={() => folderBox.current?.querySelector('input')?.focus()}>{words.pickFolder}</button>
             {replacing && <p className="cp-muted">{words.replaces(replacing)}</p>}
           </header>
-          {resumeList}
           <form className="cp-launcher__composer" onSubmit={submit}>
             <div className="cp-launcher__box">
               <AttachmentStrip attachments={attachments} />
@@ -212,9 +212,12 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
               </div>
             </div>
             <div className="cp-launcher__chips">
-              {canIsolate && <WorkspaceMenu workspace={workspace} reusable={reusable.length > 0} onChange={chooseWorkspace} />}
-              <span className="cp-launcher__folder" ref={folderBox}><FolderOpenIcon />{folderPicker}</span>
-              <button type="button" className="cp-launcher__chip" aria-pressed={resuming} onClick={() => setResuming(!resuming)}><HistoryIcon /><span>{words.resumeConversation}</span></button>
+              {/* the same chips in the same places in both modes: resuming only presses one and greys the workspace out */}
+              <span className="cp-launcher__chips-start">
+                {(canIsolate || (resuming && repo?.branch)) && <WorkspaceMenu workspace={workspace} reusable={reusable.length > 0} disabled={resuming} onChange={chooseWorkspace} />}
+                <span className="cp-launcher__folder" ref={folderBox}><FolderOpenIcon />{folderPicker}</span>
+                <button type="button" className="cp-launcher__chip" aria-pressed={resuming} onClick={() => setResuming(!resuming)}><HistoryIcon /><span>{words.resumeConversation}</span></button>
+              </span>
               <span className="cp-launcher__chips-end">
                 {reused ? (
                   <ChipSelect
@@ -227,10 +230,6 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
                     options={repo.branches.map((branch) => ({ value: branch, label: branch }))} onChange={(branch) => setBase({ cwd, branch })}
                   />
                 )}
-                <ChipSelect
-                  icon={<RulesIcon />} label={words.permissions} shown={modeLabel(permissionMode, 'short')} value={permissionMode}
-                  options={PERMISSION_MODES.map((mode) => ({ value: mode, label: modeLabel(mode, 'short') }))} onChange={(mode) => tune({ permissionMode: mode as PermissionMode })}
-                />
               </span>
             </div>
             {goneNote}
@@ -362,14 +361,14 @@ function ResumeList({ conversations, cwd, wanted, query, onQuery, chosen, onPick
   );
 }
 
-/** Where a session of the centered launcher works: the folder itself, a worktree on a new branch, or a branch to go on with. */
+/** Where a session of the streamlined launcher works: the folder itself, a worktree on a new branch, or a branch to go on with. */
 type Workspace = 'checkout' | 'new' | 'existing';
 
 /** A branch to go on with, in the chip's list: its name, and how long ago it last moved. */
 const reusableLabel = (one: ReusableBranch) => (one.at ? `${one.branch} · ${formatAgo(Date.now() - one.at)}` : one.branch);
 
-/** The centered launcher's choice of workspace; "Previous worktree" only when the folder has a branch to go on with. */
-function WorkspaceMenu({ workspace, reusable, onChange }: { workspace: Workspace; reusable: boolean; onChange: (workspace: Workspace) => void }) {
+/** The streamlined launcher's choice of workspace; "Previous worktree" only when the folder has a branch to go on with. */
+function WorkspaceMenu({ workspace, reusable, disabled, onChange }: { workspace: Workspace; reusable: boolean; disabled: boolean; onChange: (workspace: Workspace) => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -383,10 +382,10 @@ function WorkspaceMenu({ workspace, reusable, onChange }: { workspace: Workspace
   const shown = choices.find((choice) => choice.value === workspace) ?? choices[0];
   return (
     <div className="cp-launcher__workspace" ref={box}>
-      <button type="button" className="cp-launcher__chip" aria-haspopup="menu" aria-expanded={open} title={words.workspace} onClick={() => setOpen(!open)}>
+      <button type="button" className="cp-launcher__chip" aria-haspopup="menu" aria-expanded={open && !disabled} title={words.workspace} disabled={disabled} onClick={() => setOpen(!open)}>
         {shown.icon}<span>{shown.label}</span><ChevronDownIcon />
       </button>
-      {open && (
+      {open && !disabled && (
         <div className="cp-detail__menu cp-launcher__menu" role="menu" aria-label={words.workspace}>
           <p className="cp-launcher__menu-title" aria-hidden="true">{words.workspace}</p>
           {choices.map((choice) => (
@@ -400,7 +399,7 @@ function WorkspaceMenu({ workspace, reusable, onChange }: { workspace: Workspace
   );
 }
 
-/** A small chip of the centered launcher that shows its choice; the browser's own list, laid over it, opens on a click. */
+/** A small chip of the streamlined launcher that shows its choice; the browser's own list, laid over it, opens on a click. */
 function ChipSelect({ icon, label, shown, value, options, onChange }: {
   icon: ReactNode; label: string; shown: string; value: string; options: readonly { value: string; label: string }[]; onChange: (value: string) => void;
 }) {

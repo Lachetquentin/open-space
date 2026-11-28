@@ -90,7 +90,7 @@ export const composer = {
     model: 'Modèle',
     permissions: 'Autorisations',
     start: 'Lancer',
-    /** the centered launcher (Preferences.launcherStyle): the question, around the folder's name in bold */
+    /** the streamlined launcher (Preferences.launcherStyle): the question, around the folder's name in bold */
     buildIn: 'Qu’est-ce qu’on construit dans ',
     buildEnd: ' ?',
     buildAnywhere: 'Qu’est-ce qu’on construit ?',
@@ -106,7 +106,7 @@ export const composer = {
     fromBranch: 'Depuis',
     resumeConversation: 'Reprendre une conversation',
   },
-  /** the centered launcher's projects, under its question (ProjectPicker.tsx) */
+  /** the streamlined launcher's projects, under its question (ProjectPicker.tsx) */
   projectPicker: {
     title: 'Projets',
     change: 'Changer de projet',

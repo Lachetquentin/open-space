@@ -325,8 +325,8 @@ describe('the open-space MCP server', () => {
     assert.equal((await tool(api, 'update_settings', { settings: { theme: 'space', festivals: false } })).isError, false);
     assert.equal(preferences().theme, 'space');
     assert.equal(preferences().festivals, false);
-    assert.equal((await tool(api, 'update_settings', { settings: { launcherStyle: 'centered', projects: [{ folder: '/work/app', pinned: true }] } })).isError, false);
-    assert.equal(preferences().launcherStyle, 'centered');
+    assert.equal((await tool(api, 'update_settings', { settings: { launcherStyle: 'streamlined', projects: [{ folder: '/work/app', pinned: true }] } })).isError, false);
+    assert.equal(preferences().launcherStyle, 'streamlined');
     assert.deepEqual(preferences().projects, [{ folder: path.resolve('/work/app'), pinned: true }]);
   });
 

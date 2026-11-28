@@ -94,7 +94,7 @@ export const PreviousIcon = icon(SkipBack);
 export const LibraryIcon = icon(ListMusic);
 export const RadioIcon = icon(Radio);
 export const SendIcon = icon(ArrowRight);
-/** The centered launcher's round send button (Preferences.launcherStyle). */
+/** The streamlined launcher's round send button (Preferences.launcherStyle). */
 export const SendUpIcon = icon(ArrowUp);
 /** Resuming one of the folder's Claude Code conversations. */
 export const HistoryIcon = icon(History);

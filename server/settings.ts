@@ -92,7 +92,9 @@ export function parsePreferences(raw: unknown, home = os.homedir()): Partial<Pre
   if (typeof raw.glassOpacity === 'number' && raw.glassOpacity >= GLASS_OPACITY.min && raw.glassOpacity <= GLASS_OPACITY.max) found.glassOpacity = raw.glassOpacity;
   if (IDLE_COMPACT_MINUTES.some((minutes) => minutes === raw.idleCompact)) found.idleCompact = raw.idleCompact as number;
   if (WINDOW_STYLES.some((style) => style === raw.windowStyle)) found.windowStyle = raw.windowStyle as Preferences['windowStyle'];
-  if (LAUNCHER_STYLES.some((style) => style === raw.launcherStyle)) found.launcherStyle = raw.launcherStyle as Preferences['launcherStyle'];
+  // 'centered' was this layout's name before it shipped
+  const launcherStyle = raw.launcherStyle === 'centered' ? 'streamlined' : raw.launcherStyle;
+  if (LAUNCHER_STYLES.some((style) => style === launcherStyle)) found.launcherStyle = launcherStyle as Preferences['launcherStyle'];
   if (TIME_FORMATS.some((format) => format === raw.timeFormat)) found.timeFormat = raw.timeFormat as Preferences['timeFormat'];
   if (ISOLATE_MODES.some((mode) => mode === raw.isolate)) found.isolate = raw.isolate as Preferences['isolate'];
   if (ACCOUNTS_BROWSERS.some((browser) => browser === raw.accountsBrowser)) found.accountsBrowser = raw.accountsBrowser as Preferences['accountsBrowser'];

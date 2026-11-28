@@ -32,7 +32,8 @@ describe('settings', () => {
     assert.deepEqual(parsePreferences({ effort: 'ultra', timeFormat: 'swatch' }), {});
     assert.deepEqual(parsePreferences({ windowStyle: 'terminal' }), { windowStyle: 'terminal' });
     assert.deepEqual(parsePreferences({ windowStyle: 'matrix' }), {});
-    assert.deepEqual(parsePreferences({ launcherStyle: 'centered' }), { launcherStyle: 'centered' });
+    assert.deepEqual(parsePreferences({ launcherStyle: 'streamlined' }), { launcherStyle: 'streamlined' });
+    assert.deepEqual(parsePreferences({ launcherStyle: 'centered' }), { launcherStyle: 'streamlined' }, 'its former name still opens it');
     assert.deepEqual(parsePreferences({ launcherStyle: 'floating' }), {}, 'an unknown launcher layout is left out');
     assert.deepEqual(parsePreferences({ projects: [{ folder: '~/app', pinned: true }, { folder: '/home/me/app' }, { folder: 'relative' }, 'nope', { folder: '/b', pinned: 'yes' }] }, '/home/me').projects, [
       { folder: path.resolve('/home/me/app'), pinned: true }, { folder: path.resolve('/b') },

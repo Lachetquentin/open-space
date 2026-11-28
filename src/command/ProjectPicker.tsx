@@ -11,7 +11,7 @@ import { ChevronDownIcon, PinIcon, PlusIcon, UnpinIcon } from './Icons.tsx';
 import { useDismiss } from './useDismiss.ts';
 
 /**
- * The centered launcher's question, its project's name a button that opens the projects: those of the sessions and the
+ * The streamlined launcher's question, its project's name a button that opens the projects: those of the sessions and the
  * saved ones (Preferences.projects), to find by name, pin, or add a folder to. Picking one is where the session starts.
  * `before` and `after`: the question's words around the name.
  */
