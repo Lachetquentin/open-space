@@ -14,6 +14,20 @@ function freeName(folder: string, name: string): string {
 }
 
 /**
+ * rename, tried again for a moment on Windows when it is refused: a file just written there may still be held open
+ * (antivirus, indexer), which refuses moving its folder with EPERM, EACCES or EBUSY until it lets go.
+ */
+async function renameSoon(from: string, to: string) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await rename(from, to); } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform !== 'win32' || attempt === 10 || !['EPERM', 'EACCES', 'EBUSY'].includes(code ?? '')) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 50));
+    }
+  }
+}
+
+/**
  * Puts a file or a folder in the user's Trash (macOS) under a free name, or in the Recycle Bin (Windows); deletes it
  * where there is neither. `trash`, given by the tests, is the Trash folder, on every platform. Returns where it went in
  * the Trash folder (gone once the Trash is emptied), null when it was deleted or went to the Recycle Bin.
@@ -24,7 +38,7 @@ export async function moveToTrash(target: string, folder: boolean, trash?: strin
   if (!existsSync(trash)) { await rm(target, { recursive: folder }); return null; }
   const destination = freeName(trash, path.basename(target));
   try {
-    await rename(target, destination);
+    await renameSoon(target, destination);
   } catch (error) {
     // the Trash on another disk: copied there, then removed here
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
