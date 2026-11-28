@@ -65,13 +65,35 @@ export function parseShortstat(text: string): { added: number; removed: number }
 }
 
 /**
+ * The branch the repository is for, as its name and the ref to measure against: the remote-tracking branch `origin/HEAD`
+ * points at (as last fetched), else a local `main` or `master`. Null when none.
+ */
+async function defaultBranch(cwd: string): Promise<{ name: string; ref: string } | null> {
+  const remote = (await git(cwd, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']).catch(() => '')).trim();
+  // origin/HEAD can point at a ref that is gone (pruned): only a ref that still exists counts
+  if (remote && (await git(cwd, ['rev-parse', '--verify', '--quiet', `refs/remotes/${remote}`]).catch(() => '')).trim()) return { name: remote.replace(/^origin\//, ''), ref: remote };
+  for (const name of ['main', 'master']) {
+    if ((await git(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]).catch(() => '')).trim()) return { name, ref: name };
+  }
+  return null;
+}
+
+/**
  * The lines the branch checked out in `cwd` adds and removes since it left its base, committed or not (new files git
- * does not know yet aside): `isolatedBase` for an isolated session, else the branch's upstream. Local refs only, nothing
- * is fetched. Null without a base, outside a repository, or when nothing changed.
+ * does not know yet aside). The base: `isolatedBase` for an isolated session, else the repository's default branch, or,
+ * on the default branch itself, its upstream (the upstream of a pushed feature branch is that branch on the remote, so it
+ * would show only what is not pushed). Local refs only, nothing is fetched. Null without a base, outside a repository, or
+ * when nothing changed.
  */
 export async function branchDiff(cwd: string, isolatedBase?: string): Promise<BranchDiff | null> {
   try {
-    const base = isolatedBase || (await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).catch(() => '')).trim();
+    let base = isolatedBase;
+    if (!base) {
+      const current = (await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      const main = await defaultBranch(cwd);
+      if (main && main.name !== current) base = main.ref;
+      else if (main) base = (await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).catch(() => '')).trim();
+    }
     if (!base) return null;
     const start = (await git(cwd, ['merge-base', base, 'HEAD'])).trim();
     const counts = parseShortstat(await git(cwd, ['diff', '--shortstat', '--no-ext-diff', start]));

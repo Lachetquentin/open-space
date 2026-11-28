@@ -207,6 +207,7 @@ export const session: Dictionary['session'] = {
     compact: 'Compact',
     clear: 'Clear',
     chip: (percent: string) => `Context ${percent}`,
+    chipTokens: (used: string, max: string) => `Context ${used} of ${max}`,
     deferred: 'Loaded when used',
     deferredNote: 'These tools take room only once used: they do not count yet.',
     memory: 'Memory files',

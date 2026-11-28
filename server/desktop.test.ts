@@ -34,6 +34,15 @@ it('finds an editor on Windows by the program next to its command on PATH, or wh
   assert.deepEqual(findEditors({ PATH: path.join(root, 'empty') }, () => false, 'win32'), []);
 });
 
+it('finds an editor on macOS in /Applications or ~/Applications, and opens it through `open -a`', () => {
+  const home = path.resolve(os.tmpdir(), 'editor-home');
+  const code = path.join('/Applications', 'Visual Studio Code.app');
+  const cursor = path.join(home, 'Applications', 'Cursor.app');
+  const found = findEditors({}, (file) => file === code || file === cursor, 'darwin', home);
+  assert.deepEqual(found.map(({ id, file, args }) => ({ id, file, args })), [{ id: 'vscode', file: '/usr/bin/open', args: ['-a', code] }, { id: 'cursor', file: '/usr/bin/open', args: ['-a', cursor] }]);
+  assert.deepEqual(findEditors({}, () => false, 'darwin', home), []);
+});
+
 it('only accepts a known terminal preference, never an executable path or injected command', () => {
   for (const terminal of ['cmd', 'powershell', 'git-bash']) assert.equal(parsePreferences({ terminal }).terminal, terminal);
   for (const terminal of ['cmd.exe /c echo injected', 'D:\\tools\\custom.exe', 'unknown', 1]) assert.equal(parsePreferences({ terminal }).terminal, undefined);

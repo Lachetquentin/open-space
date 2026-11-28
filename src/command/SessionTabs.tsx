@@ -96,13 +96,16 @@ function AgentsMenu({ sessionId, agents, shown, onOpen }: { sessionId: string; a
                   <span className="cp-feed__agent-task">{each.task}</span>
                   <span className="cp-feed__agent-status">{words.subagentStatus[each.status]}{durations && <> · <AgentTime agent={each} /></>}</span>
                 </button>
-                {taskId && (
+                {taskId ? (
                   <button
                     type="button" className="cp-tabs__agent-stop" aria-label={words.agentStopTitle(each.name)} title={words.agentStopTitle(each.name)} disabled={stopping.has(taskId)}
                     onClick={() => { setStopping(new Set([...stopping, taskId])); send({ t: 'stopTask', sessionId, taskId }); }}
                   >
                     <StopIcon />
                   </button>
+                ) : (
+                  // the stop button's place, empty, so the status of every row ends at the same edge
+                  stoppable && <span className="cp-tabs__agent-stop" aria-hidden="true" />
                 )}
               </li>
             );

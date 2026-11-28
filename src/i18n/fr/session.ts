@@ -216,6 +216,7 @@ export const session = {
     compact: 'Compacter',
     clear: 'Vider',
     chip: (percent: string) => `Contexte ${percent}`,
+    chipTokens: (used: string, max: string) => `Contexte ${used} sur ${max}`,
     deferred: 'Chargés à la demande',
     deferredNote: 'Ces outils ne prennent de place qu’une fois utilisés : ils ne comptent pas encore.',
     memory: 'Fichiers de mémoire',

@@ -137,7 +137,7 @@ export function ContextChip({ context, onOpen, inTokens = false }: { context: { 
   const words = t.session.context;
   const percent = Math.min(100, Math.round(share(context.used, context.max) * 100));
   return (
-    <button type="button" className="cp-context-chip" data-level={level} aria-label={words.chip(t.common.percent(percent))} title={words.advice[level]} onClick={onOpen}>
+    <button type="button" className="cp-context-chip" data-level={level} aria-label={inTokens ? words.chipTokens(tokens(context.used), tokens(context.max)) : words.chip(t.common.percent(percent))} title={words.advice[level]} onClick={onOpen}>
       {level === 'high' && <AlertIcon />}
       <progress className="cp-meter" data-level={level} value={percent} max={100} aria-hidden="true" />
       <span>{inTokens ? `${tokens(context.used)} / ${tokens(context.max)}` : t.common.percent(percent)}</span>

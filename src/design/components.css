@@ -473,7 +473,7 @@ input[type='range']:focus-visible { outline-offset: 4px; border-radius: 999px; }
 /* one tag, in place of its pill or of « + Tag »: a pill-sized field beside the others */
 .cp-detail__edit[data-kind='tag'] { display: inline-flex; }
 .cp-detail__edit[data-kind='tag'] input { height: var(--badge-height); padding: 0 var(--space-2); border-radius: 999px; font-size: var(--text-xs); }
-.cp-detail__line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.cp-detail__line { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: var(--space-2) var(--space-3); }
 .cp-icon-button[data-size='small'] { width: 1.75rem; height: 1.75rem; }
 .cp-icon-button:not(:hover):not(:focus-visible) .cp-icon { opacity: 0.8; }
 /* a session's tag: a small pill, dashed while there is none yet */
@@ -503,7 +503,7 @@ button.cp-tag:hover { border-color: var(--color-accent); }
   border: var(--border-width) solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text-muted); font-size: var(--text-xs);
 }
 .cp-changes-chip:hover, .cp-changes-chip[aria-pressed='true'], .cp-changes-chip[aria-expanded='true'] { border-color: var(--color-accent); color: var(--color-text); }
-.cp-changes-chip .cp-icon { width: 0.75rem; height: 0.75rem; }
+.cp-changes-chip .cp-icon, .cp-detail__machine .cp-icon, .cp-copy-path .cp-icon { width: 0.75rem; height: 0.75rem; flex: none; }
 /* ── What the settings add to a session's header (Preferences.sessionExtras) ── */
 /* its whole branch against its base: a chip like the changes', that opens nothing */
 .cp-branch-diff {
@@ -512,14 +512,12 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 }
 /* the computer's name: small and quiet */
 .cp-detail__machine { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--text-xs); white-space: nowrap; }
-.cp-detail__machine .cp-icon { width: 0.75rem; height: 0.75rem; flex: none; }
 /* its folder's full path: cut from its start when long (the folder's own name stays), copied on a click */
 .cp-copy-path {
   display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; max-width: 100%; height: var(--badge-height); padding: 0 var(--space-2);
   border: var(--border-width) solid transparent; border-radius: 999px; background: none; color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); cursor: pointer;
 }
 .cp-copy-path:hover, .cp-copy-path:focus-visible { border-color: var(--color-border-strong); color: var(--color-text); }
-.cp-copy-path .cp-icon { width: 0.75rem; height: 0.75rem; flex: none; }
 .cp-copy-path__text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 /* ── A session's browser: a chip in its header (lit while its agent drives), a view in place of the thread (BrowserView.tsx) ── */
 /* its agent is at work in its browser */
@@ -830,7 +828,7 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 /* a sub-agent at work, with its stop button beside it (Preferences.sessionExtras.agentStop) */
 .cp-tabs__menu li:has(> .cp-tabs__agent-stop) { display: flex; align-items: center; gap: var(--space-1); }
 .cp-tabs__menu li:has(> .cp-tabs__agent-stop) > .cp-tabs__agent { flex: 1; min-width: 0; }
-.cp-detail__menu .cp-tabs__agent-stop { flex: none; color: var(--color-text-muted); }
+.cp-detail__menu .cp-tabs__agent-stop { flex: none; display: grid; place-items: center; width: 1.75rem; height: 1.75rem; padding: 0; color: var(--color-text-muted); }
 .cp-detail__menu .cp-tabs__agent-stop:hover, .cp-detail__menu .cp-tabs__agent-stop:focus-visible { color: var(--tone-error); }
 .cp-feed__agent-time { font-variant-numeric: tabular-nums; }
 /* icons only, the name on the tab shown; in a narrow window the sub-agents' button keeps only its icon too */

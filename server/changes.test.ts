@@ -73,31 +73,71 @@ describe('changes', () => {
     assert.deepEqual(parseShortstat(''), { added: 0, removed: 0 });
   });
 
-  it('measures a whole branch against its base, committed or not: the isolated base first, else the upstream, else nothing', async () => {
-    const repo = path.join(base, 'branchy');
-    mkdirSync(repo);
-    const run = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd: repo });
-    run('init', '-q', '-b', 'main');
-    writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n');
-    run('add', '.');
-    run('commit', '-q', '-m', 'start');
-    run('branch', 'release');
-    run('checkout', '-q', '-b', 'feature');
-    assert.equal(await branchDiff(repo), null, 'no upstream, no base');
-    run('branch', '--set-upstream-to=main');
-    assert.equal(await branchDiff(repo), null, 'nothing changed');
-    writeFileSync(path.join(repo, 'a.txt'), 'one\nTWO\nthree\n');
-    run('commit', '-q', '-am', 'work');
-    // moving on, main's own commits do not count: only what the branch did since it left it
-    run('checkout', '-q', 'main');
-    writeFileSync(path.join(repo, 'b.txt'), 'main only\n');
-    run('add', '.');
-    run('commit', '-q', '-m', 'elsewhere');
-    run('checkout', '-q', 'feature');
-    writeFileSync(path.join(repo, 'a.txt'), 'one\nTWO\n');
-    assert.deepEqual(await branchDiff(repo), { base: 'main', added: 1, removed: 1 }, 'the commit and the change not committed, against the upstream');
-    run('checkout', '-q', '-b', 'isolated');
-    assert.deepEqual(await branchDiff(repo, 'release'), { base: 'release', added: 1, removed: 1 }, 'an isolated session\'s base, though the branch has no upstream');
-    assert.equal(await branchDiff(base), null, 'outside a repository');
+  describe('branchDiff', () => {
+    const gitIn = (cwd: string) => (...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, stdio: 'pipe' });
+    /** A repository on `main` with one commit, then a branch `feature` with a commit; `dirty()` adds an uncommitted change on top. */
+    const repoWithFeature = (name: string, trunk = 'main') => {
+      const repo = path.join(base, name);
+      mkdirSync(repo);
+      const run = gitIn(repo);
+      run('init', '-q', '-b', trunk);
+      writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n');
+      run('add', '.');
+      run('commit', '-q', '-m', 'start');
+      run('checkout', '-q', '-b', 'feature');
+      writeFileSync(path.join(repo, 'a.txt'), 'one\nTWO\nthree\n');
+      run('commit', '-q', '-am', 'work');
+      const dirty = () => writeFileSync(path.join(repo, 'a.txt'), 'one\nTWO\n');
+      return { repo, run, dirty };
+    };
+
+    it('measures a feature branch against the default branch, committed or not, whatever its upstream', async () => {
+      const { repo, run, dirty } = repoWithFeature('feature-vs-default');
+      // main moves on: its own commits are not the branch's work
+      run('checkout', '-q', 'main');
+      writeFileSync(path.join(repo, 'b.txt'), 'main only\n');
+      run('add', '.');
+      run('commit', '-q', '-m', 'elsewhere');
+      run('checkout', '-q', 'feature');
+      run('branch', '--set-upstream-to=main');
+      dirty();
+      assert.deepEqual(await branchDiff(repo), { base: 'main', added: 1, removed: 1 });
+      assert.equal(await branchDiff(path.join(repo, '..')), null, 'outside a repository');
+    });
+
+    it('measures a pushed feature branch against the remote default branch, not against itself', async () => {
+      const { repo, run, dirty } = repoWithFeature('pushed-feature');
+      const remote = path.join(base, 'pushed-feature.git');
+      execFileSync('git', ['clone', '-q', '--bare', repo, remote]);
+      run('remote', 'add', 'origin', remote);
+      run('fetch', '-q', 'origin');
+      run('remote', 'set-head', 'origin', 'main');
+      run('push', '-q', '-u', 'origin', 'feature');
+      dirty();
+      assert.deepEqual(await branchDiff(repo), { base: 'origin/main', added: 1, removed: 1 }, 'its upstream is origin/feature, which holds the commit already');
+    });
+
+    it('measures the default branch against its upstream', async () => {
+      const { repo, run } = repoWithFeature('default-vs-upstream');
+      run('checkout', '-q', 'main');
+      run('branch', 'pushed', 'main');
+      assert.equal(await branchDiff(repo), null, 'no upstream');
+      run('branch', '--set-upstream-to=pushed');
+      writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\nthree\n');
+      run('commit', '-q', '-am', 'ahead');
+      assert.deepEqual(await branchDiff(repo), { base: 'pushed', added: 1, removed: 0 });
+    });
+
+    it('measures an isolated session against its worktree base, though the default branch is elsewhere', async () => {
+      const { repo, dirty } = repoWithFeature('isolated');
+      dirty();
+      gitIn(repo)('branch', 'release', 'main');
+      assert.deepEqual(await branchDiff(repo, 'release'), { base: 'release', added: 1, removed: 1 });
+    });
+
+    it('has no base when the repository has no default branch to compare with', async () => {
+      const { repo } = repoWithFeature('no-default', 'trunk');
+      assert.equal(await branchDiff(repo), null);
+    });
   });
 });
