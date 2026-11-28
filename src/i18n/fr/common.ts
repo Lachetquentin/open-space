@@ -1,4 +1,5 @@
 import { shortcut } from '../../lib/platform.ts';
+import { plural } from '../index.ts';
 export const common = {
   duration: {
     seconds: (seconds: number) => `${seconds} s`,
@@ -51,8 +52,13 @@ export const common = {
     searchTitle: 'Sessions, messages, commandes et réglages',
     settings: 'Réglages',
     settingsTitle: (keys: string) => `Réglages (${keys})`,
-    settingsUpdate: 'Réglages : une nouvelle version de Claude Code est installée',
-    settingsAppUpdate: 'Réglages : une nouvelle version d’Open Space est prête',
+    appDownloading: (version: string, percent: string) => `Open Space ${version} se télécharge (${percent})`,
+    appReady: (version: string) => `Open Space ${version} est prêt : redémarrer`,
+    claudeNewer: (version: string, installed: string) => `Claude Code ${version} est disponible (tu as la ${installed}) : mettre à jour`,
+    claudeUpdating: 'Claude Code se met à jour…',
+    claudeFailed: (text: string) => `La mise à jour de Claude Code a échoué : ${text}. Clique pour réessayer.`,
+    claudeOutdated: (version: string, count: number) => `Claude Code ${version} est installé : ${plural(count, 'session tourne', 'sessions tournent')} encore sur l’ancienne version. Relancer celles qui attendent`,
+    claudeOutdatedBusy: (version: string, count: number) => `Claude Code ${version} est installé : ${plural(count, 'session passera', 'sessions passeront')} à la nouvelle version à la prochaine pause`,
   },
   notices: {
     connecting: 'Connexion au serveur…',

@@ -211,6 +211,7 @@ export const settings: Dictionary['settings'] = {
       automataFolder: { title: 'External runs folder', hint: 'Optional: the folder where another program describes the claude -p runs it starts (runs/<id>.json, and its roles in .claude/agents). Open Space shows them in the server room and never writes there. Empty: nothing.' },
       version: { title: 'Open Space', hint: 'The app downloads new versions and restarts on them as soon as no session is working.' },
       claude: { title: 'Claude Code', found: (version: string) => `Version ${version}`, missing: 'Not found on this computer.' },
+      claudeUpdateCheck: { title: 'Look for new Claude Code versions', hint: 'Open Space then asks registry.npmjs.org for the latest published version, at launch and every 6 h, and says so in the header. Nothing installs without your click.' },
       account: {
         title: 'Claude account',
         hint: 'The account every session uses, as /login and /logout set it in a terminal. Logging in opens your browser.',

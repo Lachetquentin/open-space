@@ -57,7 +57,7 @@ const LAYOUT: Readonly<Partial<Record<SettingsSection, readonly (readonly [Group
   office: [['appearance', ['windowStyle', 'glassOpacity', 'tagColors', 'reduceMotion']], ['life', ['theme', 'festivals', 'officeLife', 'hideNames', 'radio', 'previewFestival', 'previewHour']], ['crew', ['crew']]],
   // what starts sessions without the user at the keyboard, and the chat bots and programs that reach Open Space (body())
   connections: [['automata', ['automata', 'hooksAddress', 'automataFolder']], ['phone', ['phoneAccess']]],
-  about: [['appearance', ['version', 'claude', 'account', 'links', 'dockApp']]],
+  about: [['appearance', ['version', 'claude', 'claudeUpdateCheck', 'account', 'links', 'dockApp']]],
 };
 
 /** At the top of the settings while the Mac app downloads a new Open Space, then to restart on it. */
@@ -510,6 +510,11 @@ function SettingsEditor() {
               failure={claudeUpdate?.state === 'failed' ? claudeUpdate.text : undefined} onClick={() => store().updateClaude()}
             />
           )}
+        </Row>
+      );
+      case 'claudeUpdateCheck': return (
+        <Row key={id} id={id} flash={flash} icon={<GlobeIcon />} title={rows.claudeUpdateCheck.title} hint={rows.claudeUpdateCheck.hint}>
+          <Switch checked={draft.claudeUpdateCheck ?? false} onChange={(claudeUpdateCheck) => change({ claudeUpdateCheck })} label={rows.claudeUpdateCheck.title} />
         </Row>
       );
       case 'account': return (

@@ -18,6 +18,7 @@ import type { PhoneProblem } from '../shared/triggers.ts';
 import { createAsideRunner } from './aside.ts';
 import { createTagger } from './auto-tag.ts';
 import { createCatalogProbe, createProcessFactory, findClaude, readAccount, readVersion, runAuth, runUpdate } from './claude-process.ts';
+import { ClaudeLatest } from './claude-latest.ts';
 import { loadConfig } from './config.ts';
 import { Crew } from './crew.ts';
 import { changedSettings } from '../shared/claude-settings.ts';
@@ -358,6 +359,7 @@ async function applyPreferences(changes: Partial<typeof settings.preferences>) {
   broadcast(preferencesMessage());
   await sessions.applySettings(changedSettings(before, settings.preferences.claude));
   if (settings.preferences.accountsBrowser !== accountsBefore) sessions.accountsBrowserChanged();
+  claudeLatest.apply();
   await applyPhoneAccess();
   await automata.poll();
 }
@@ -475,6 +477,13 @@ async function checkClaudeVersion() {
   installedClaude = version;
   broadcast({ t: 'claude', claude: claudeInfo() });
 }
+/** the latest Claude Code on the npm registry, asked only while the user's check is on (Preferences.claudeUpdateCheck) */
+const claudeLatest = new ClaudeLatest({
+  enabled: () => Boolean(claude && settings.preferences.claudeUpdateCheck),
+  onChange: (version) => broadcast({ t: 'claudeLatest', version }),
+  log,
+});
+claudeLatest.apply();
 /** who Claude Code is signed in as, as last told to the pages; read again when a page connects (a terminal login changes it too) */
 let account: ClaudeAccount | null = null;
 /** a `claude auth login` or `logout` is running: another click waits for it */
@@ -563,7 +572,7 @@ function onConnection(socket: WebSocket) {
   send({
     t: 'hello', claude: claudeInfo(), roots: config.roots,
     sessions: sessions.list(), commands: sessions.getCommands(), folderCommands: sessions.getFolderCommands(), models: sessions.getModels(), quota: sessions.getQuota(), build: BUILD, crew: crew.list(),
-    preferences: settings.preferences, onboarded: settings.onboarded, rootsLocked: config.rootsLocked, claudeDefaults, appUpdate,
+    preferences: settings.preferences, onboarded: settings.onboarded, rootsLocked: config.rootsLocked, claudeDefaults, appUpdate, claudeLatest: claudeLatest.version,
     browsers: browsers.states(), browserAvailable: browsers.available, mods: mods.list(),
   });
   checkClaudeVersion().catch((error: unknown) => log('cannot read the Claude Code version', error));

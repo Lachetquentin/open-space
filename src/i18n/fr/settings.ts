@@ -214,6 +214,7 @@ export const settings = {
       automataFolder: { title: 'Dossier des runs externes', hint: 'Facultatif : le dossier où un autre programme décrit les « claude -p » qu’il lance (runs/<id>.json, et ses rôles dans .claude/agents). Open Space les montre dans la salle des serveurs, sans jamais y écrire. Vide : rien.' },
       version: { title: 'Open Space', hint: 'L’app télécharge les nouvelles versions et redémarre dessus dès qu’aucune session ne travaille.' },
       claude: { title: 'Claude Code', found: (version: string) => `Version ${version}`, missing: 'Introuvable sur cet ordinateur.' },
+      claudeUpdateCheck: { title: 'Chercher les nouvelles versions de Claude Code', hint: 'Open Space demande alors à registry.npmjs.org la dernière version publiée, au lancement puis toutes les 6 h, et le dit dans l’en-tête. Rien ne s’installe sans ton clic.' },
       account: {
         title: 'Compte Claude',
         hint: 'Le compte de toutes les sessions, celui que /login et /logout règlent dans un terminal. Se connecter ouvre ton navigateur.',

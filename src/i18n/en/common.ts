@@ -1,5 +1,5 @@
 import { shortcut } from '../../lib/platform.ts';
-import type { Dictionary } from '../index.ts';
+import { plural, type Dictionary } from '../index.ts';
 
 export const common: Dictionary['common'] = {
   duration: {
@@ -53,8 +53,13 @@ export const common: Dictionary['common'] = {
     searchTitle: 'Sessions, messages, commands and settings',
     settings: 'Settings',
     settingsTitle: (keys: string) => `Settings (${keys})`,
-    settingsUpdate: 'Settings: a new version of Claude Code is installed',
-    settingsAppUpdate: 'Settings: a new version of Open Space is ready',
+    appDownloading: (version, percent) => `Open Space ${version} is downloading (${percent})`,
+    appReady: (version) => `Open Space ${version} is ready: restart`,
+    claudeNewer: (version, installed) => `Claude Code ${version} is available (you have ${installed}): update`,
+    claudeUpdating: 'Claude Code is updating…',
+    claudeFailed: (text) => `Updating Claude Code failed: ${text}. Click to try again.`,
+    claudeOutdated: (version, count) => `Claude Code ${version} is installed: ${plural(count, 'session still runs', 'sessions still run')} the old version. Restart the waiting ones`,
+    claudeOutdatedBusy: (version, count) => `Claude Code ${version} is installed: ${plural(count, 'session switches', 'sessions switch')} to it at the next pause`,
   },
   notices: {
     connecting: 'Connecting to the server…',

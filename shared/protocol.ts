@@ -597,6 +597,8 @@ export interface Preferences {
   isolate: IsolateMode;
   /** where the sessions of trusted folders reach the user's signed-in accounts (see AccountsBrowser) */
   accountsBrowser: AccountsBrowser;
+  /** Open Space asks registry.npmjs.org for the latest Claude Code at launch and every 6 h (server/claude-latest.ts); absent means off: no request */
+  claudeUpdateCheck?: boolean;
   /** the dashboards of mods (shared/dashboards.ts); absent until the first one is made */
   dashboards?: Dashboard[];
 }
@@ -842,7 +844,7 @@ export type ClientMessage =
   | { t: 'browserInput'; sessionId: string; lane: number; input: BrowserInput };
 
 export type ServerMessage =
-  | { t: 'hello'; claude: ClaudeInfo; roots: string[]; sessions: SessionInfo[]; commands: SlashCommand[]; folderCommands: Record<string, SlashCommand[]>; models: ModelChoice[]; quota: Quota | null; build: string; crew: CrewMember[]; preferences: Preferences; onboarded: boolean; rootsLocked: boolean; claudeDefaults: ClaudeDefaults; appUpdate: AppUpdate | null; /** by browserId (shared/browser.ts) */ browsers: Record<string, BrowserState>; browserAvailable: boolean; /** none from a server older than the mods */ mods?: ModInfo[] }
+  | { t: 'hello'; claude: ClaudeInfo; roots: string[]; sessions: SessionInfo[]; commands: SlashCommand[]; folderCommands: Record<string, SlashCommand[]>; models: ModelChoice[]; quota: Quota | null; build: string; crew: CrewMember[]; preferences: Preferences; onboarded: boolean; rootsLocked: boolean; claudeDefaults: ClaudeDefaults; appUpdate: AppUpdate | null; /** the latest Claude Code on the registry, while Preferences.claudeUpdateCheck is on (none from an older server) */ claudeLatest?: string | null; /** by browserId (shared/browser.ts) */ browsers: Record<string, BrowserState>; browserAvailable: boolean; /** none from a server older than the mods */ mods?: ModInfo[] }
   /** a session asked for in a folder that runs code of its own and was never trusted: the user decides (SessionOptions.trust) */
   | { t: 'trustNeeded'; cwd: string; code: FolderCode }
   /** the settings changed (from any tab); `roots`: the folders in effect */
@@ -872,6 +874,8 @@ export type ServerMessage =
   /** the Claude Code installed, read again now and then (its own updater replaces it in the background) */
   | { t: 'claude'; claude: ClaudeInfo }
   | { t: 'claudeUpdate'; update: ClaudeUpdate }
+  /** the latest Claude Code the registry gave (Preferences.claudeUpdateCheck), null once the check is off */
+  | { t: 'claudeLatest'; version: string | null }
   | { t: 'claudeAccount'; account: ClaudeAccount }
   /** where the Mac app is with a new Open Space (only when the bridge runs inside it) */
   | { t: 'appUpdate'; update: AppUpdate }

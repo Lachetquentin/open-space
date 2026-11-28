@@ -2278,8 +2278,14 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 .cp-prefs__banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: var(--border-width) solid var(--color-accent-soft); border-radius: var(--radius-lg); background: var(--color-surface); }
 .cp-prefs__banner strong { font-size: var(--text-sm); font-weight: var(--weight-medium); }
 .cp-prefs__banner-icon { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--radius-sm); background: var(--color-accent-soft); color: var(--color-accent); }
-.cp-header__settings { position: relative; }
-.cp-header__settings[data-alert='true']::after { content: ''; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--tone-error); box-shadow: 0 0 0 2px var(--color-bg); }
+/* a new Open Space or Claude Code (Header.tsx): the accent colour and the dot of what is new, the icon turning while it installs */
+.cp-header__update { position: relative; color: var(--color-accent); }
+.cp-header__update[data-news]::after {
+  content: ''; position: absolute; top: 0.2rem; right: 0.2rem; width: 0.5rem; height: 0.5rem; border-radius: 50%;
+  background: var(--tone-permission); box-shadow: 0 0 0 2px var(--glass-solid);
+}
+.cp-header__update[aria-busy='true'] .cp-icon { animation: cp-spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .cp-header__update[aria-busy='true'] .cp-icon { animation-duration: 3s; } }
 @media (max-width: 40rem) {
   .cp-prefs__banner { grid-template-columns: auto minmax(0, 1fr); }
   .cp-prefs__banner > .cp-button { grid-column: 1 / -1; }

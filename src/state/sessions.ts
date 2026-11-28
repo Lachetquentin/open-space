@@ -14,6 +14,7 @@ import { browserId, type BrowserState } from '../../shared/browser.ts';
 import { isRunning } from './labels.ts';
 import { wentToPage } from './pip.ts';
 import type { ClaudeDefaults } from '../../shared/claude-settings.ts';
+import { isNewerVersion } from '../../shared/claude-version.ts';
 import { setClockFormat } from '../lib/format.ts';
 import type { Festival } from '../../shared/festivals.ts';
 import { languageOf, type Language } from '../../shared/i18n.ts';
@@ -241,6 +242,8 @@ export interface CommandPostState {
   claudeDefaults: ClaudeDefaults;
   /** where the last `claude update` asked from the page is (null: none since the page opened) */
   claudeUpdate: ClaudeUpdate | null;
+  /** the latest Claude Code on the npm registry, while the user's check is on (Preferences.claudeUpdateCheck; null: unknown or off) */
+  claudeLatest: string | null;
   /** who Claude Code is signed in as (null until the server has asked it) */
   claudeAccount: ClaudeAccount | null;
   /** a new Open Space the Mac app found (null outside the app, or when there is none) */
@@ -532,6 +535,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   rootsLocked: false,
   claudeDefaults: { current: {}, outputStyles: [] },
   claudeUpdate: null,
+  claudeLatest: null,
   claudeAccount: null,
   appUpdate: null,
   rootSuggestions: null,
@@ -569,7 +573,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
           ...languageState(message.preferences),
           claude: message.claude, roots: message.roots, crew: message.crew, sessions, commands: message.commands, // a server started before these existed does not send them
           folderCommands: message.folderCommands ?? {}, models: message.models ?? [], quota: message.quota,
-          preferences: message.preferences, onboarded: message.onboarded, rootsLocked: message.rootsLocked, claudeDefaults: message.claudeDefaults, appUpdate: message.appUpdate,
+          preferences: message.preferences, onboarded: message.onboarded, rootsLocked: message.rootsLocked, claudeDefaults: message.claudeDefaults, appUpdate: message.appUpdate, claudeLatest: message.claudeLatest ?? null,
           browsers: message.browsers ?? {}, browserAvailable: message.browserAvailable ?? false, mods: message.mods ?? null,
         });
         // after a reconnection the windows stay; after a reload they come back as they were
@@ -674,6 +678,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
       case 'directories': set({ directories: message.directories }); break;
       case 'claude': set({ claude: message.claude }); break;
       case 'claudeUpdate': set({ claudeUpdate: message.update }); break;
+      case 'claudeLatest': set({ claudeLatest: message.version }); break;
       case 'claudeAccount': set({ claudeAccount: message.account }); break;
       case 'appUpdate': set({ appUpdate: message.update }); break;
       case 'changes': set({ changes: { ...s.changes, [message.sessionId]: message.changes } }); break;
@@ -1158,4 +1163,12 @@ export const commandsIn = (state: Pick<CommandPostState, 'commands' | 'folderCom
 /** The sessions whose process runs another Claude Code than the one installed (`version`): the next launch takes it. */
 export const outdatedSessions = (sessions: readonly SessionInfo[], version: string | undefined) =>
   version ? sessions.filter((session) => session.claudeVersion !== undefined && session.claudeVersion !== version) : [];
-export const selectOutdatedCount = (state: CommandPostState) => outdatedSessions(Object.values(state.sessions), state.claude?.version).length;
+/**
+ * The newer Claude Code the registry has than the one installed (Preferences.claudeUpdateCheck), or null; also null once
+ * `claude update` said this version is up to date (its release channel may lag behind npm's latest).
+ */
+export const selectClaudeNewer = (state: CommandPostState) => {
+  const installed = state.claude?.found ? state.claude.version : undefined;
+  if (!installed || !state.claudeLatest || !isNewerVersion(state.claudeLatest, installed)) return null;
+  return state.claudeUpdate?.state === 'upToDate' && state.claudeUpdate.version === installed ? null : state.claudeLatest;
+};
