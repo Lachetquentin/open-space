@@ -186,6 +186,9 @@ export const en: ServerDictionary = {
     unsupported: 'Opening a terminal only works on macOS and Windows for now.',
     failed: 'The terminal won’t open.',
   },
+  editor: {
+    failed: (name) => `${name} won’t open.`,
+  },
   trust: {
     entry: (name: string, what: string) => `${name}: ${what}`,
   },

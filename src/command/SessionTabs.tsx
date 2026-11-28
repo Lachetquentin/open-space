@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { showsExtra } from '../../shared/protocol.ts';
 import { t } from '../i18n/index.ts';
+import { formatDuration } from '../lib/format.ts';
+import { useNow } from '../lib/useNow.ts';
+import { agentElapsed } from '../state/feed.ts';
 import { type PanelView, useSessions } from '../state/sessions.ts';
 import { AgentFace, type Subagent } from './Feed.tsx';
-import { AgentIcon, ChevronDownIcon, FolderIcon, GlobeIcon, MessageIcon } from './Icons.tsx';
+import { AgentIcon, ChevronDownIcon, FolderIcon, GlobeIcon, MessageIcon, StopIcon } from './Icons.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { useMenuBelow } from './useMenuBelow.ts';
 
@@ -31,8 +35,22 @@ export function SessionTabs({ sessionId, view, driving, agents, agent, setAgent 
   );
 }
 
-/** The sub-agents behind one button: those at work first, then the others, the last one first. */
+/** How long a sub-agent has worked: ticking while it works, its own time once it finished. */
+function AgentTime({ agent }: { agent: Subagent }) {
+  const now = useNow(agent.endedAt === null ? 1000 : 3_600_000);
+  return <span className="cp-feed__agent-time">{formatDuration(agentElapsed(agent, now))}</span>;
+}
+
+/**
+ * The sub-agents behind one button: those at work first, then the others, the last one first. The settings may add how
+ * long each worked, and a stop button on those at work whose task Claude Code told (Preferences.sessionExtras).
+ */
 function AgentsMenu({ sessionId, agents, shown, onOpen }: { sessionId: string; agents: readonly Subagent[]; shown: Subagent | undefined; onOpen: (agentId: string) => void }) {
+  const durations = useSessions((s) => showsExtra(s.preferences, 'agentDurations'));
+  const stoppable = useSessions((s) => showsExtra(s.preferences, 'agentStop'));
+  const tasks = useSessions((s) => s.sessions[sessionId]?.subagents);
+  const send = useSessions((s) => s.send);
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLUListElement>(null);
@@ -43,6 +61,8 @@ function AgentsMenu({ sessionId, agents, shown, onOpen }: { sessionId: string; a
   useDismiss(open, box, close);
   useMenuBelow(open, box, menu);
   useEffect(() => () => clearTimeout(leaving.current), []);
+  // a stop refused (its error shows as a toast) can be tried again once the menu closed
+  useEffect(() => { if (!open) setStopping(new Set()); }, [open]);
   const working = agents.filter((each) => each.status === 'working');
   const listed = [...working, ...agents.filter((each) => each.status !== 'working').reverse()];
   const words = t.session.feed;
@@ -66,16 +86,27 @@ function AgentsMenu({ sessionId, agents, shown, onOpen }: { sessionId: string; a
       </button>
       {open && (
         <ul ref={menu} className="cp-detail__menu cp-tabs__menu" popover="manual" aria-label={words.agentsList}>
-          {listed.map((each) => (
-            <li key={each.agentId}>
-              <button type="button" aria-current={shown?.agentId === each.agentId} onClick={() => { onOpen(each.agentId); close(); }}>
-                <AgentFace sessionId={sessionId} agent={each} />
-                <span className="cp-feed__agent-name">{each.name}</span>
-                <span className="cp-feed__agent-task">{each.task}</span>
-                <span className="cp-feed__agent-status">{words.subagentStatus[each.status]}</span>
-              </button>
-            </li>
-          ))}
+          {listed.map((each) => {
+            const taskId = stoppable && each.status === 'working' ? tasks?.find((task) => task.id === each.agentId)?.taskId : undefined;
+            return (
+              <li key={each.agentId}>
+                <button type="button" className="cp-tabs__agent" aria-current={shown?.agentId === each.agentId} onClick={() => { onOpen(each.agentId); close(); }}>
+                  <AgentFace sessionId={sessionId} agent={each} />
+                  <span className="cp-feed__agent-name">{each.name}</span>
+                  <span className="cp-feed__agent-task">{each.task}</span>
+                  <span className="cp-feed__agent-status">{words.subagentStatus[each.status]}{durations && <> · <AgentTime agent={each} /></>}</span>
+                </button>
+                {taskId && (
+                  <button
+                    type="button" className="cp-tabs__agent-stop" aria-label={words.agentStopTitle(each.name)} title={words.agentStopTitle(each.name)} disabled={stopping.has(taskId)}
+                    onClick={() => { setStopping(new Set([...stopping, taskId])); send({ t: 'stopTask', sessionId, taskId }); }}
+                  >
+                    <StopIcon />
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

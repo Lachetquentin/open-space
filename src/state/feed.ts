@@ -10,7 +10,8 @@ export type FeedItem =
   | { id: number; kind: 'assistant'; at: number; text: string; author: string | null; agent: string | null }
   /** `diff`: what an Edit, MultiEdit or Write call changed in its file; `output`: what another call gave back */
   | { id: number; kind: 'tool'; at: number; tool: string; detail: string; author: string | null; agent: string | null; ok: boolean | null; callId: string; diff?: FileDiff; output?: ToolOutput }
-  | { id: number; kind: 'subagent'; at: number; agentId: string; name: string; task: string; status: 'working' | 'done' | 'failed'; report: string }
+  /** `endedAt`: when it finished, null while it works */
+  | { id: number; kind: 'subagent'; at: number; agentId: string; name: string; task: string; status: 'working' | 'done' | 'failed'; report: string; endedAt: number | null }
   /** question: an AskUserQuestion call (allowed = answered) */
   | { id: number; kind: 'permission'; at: number; requestId: string; tool: string; detail: string; author: string | null; agent: string | null; question: boolean; status: 'pending' | 'allowed' | 'denied' | 'cancelled' }
   /** a message from another Claude Code session (`from`: its name) */
@@ -27,6 +28,9 @@ export type FeedItem =
   | { id: number; kind: 'shell'; at: number; shellId: string; command: string; output: string; code: number | null; done: boolean; ms: number; byUser: boolean };
 
 export interface Feed { items: FeedItem[]; plan: PlanItem[] }
+
+/** How long a sub-agent worked (ms): until it finished, or until `now` while it works. */
+export const agentElapsed = (agent: FeedItem & { kind: 'subagent' }, now: number) => Math.max(0, (agent.endedAt ?? now) - agent.at);
 
 export function buildFeed(events: readonly LoggedEvent[]): Feed {
   const items: FeedItem[] = [];
@@ -57,7 +61,7 @@ export function buildFeed(events: readonly LoggedEvent[]): Feed {
       case 'say': items.push({ id: seq, kind: 'assistant', at, text: ev.text, author: author(ev.who), agent: agent(ev.who) }); break;
       case 'plan': plan = ev.items; break;
       case 'hire': {
-        const item = { id: seq, kind: 'subagent' as const, at, agentId: ev.id, name: ev.name, task: ev.task, status: 'working' as const, report: '' };
+        const item = { id: seq, kind: 'subagent' as const, at, agentId: ev.id, name: ev.name, task: ev.task, status: 'working' as const, report: '', endedAt: null };
         subagents.set(ev.id, item);
         items.push(item);
         break;
@@ -69,7 +73,7 @@ export function buildFeed(events: readonly LoggedEvent[]): Feed {
       }
       case 'leave': {
         const item = subagents.get(ev.who);
-        if (item) item.status = ev.ok ? 'done' : 'failed';
+        if (item) Object.assign(item, { status: ev.ok ? 'done' : 'failed', endedAt: at });
         break;
       }
       case 'act': {

@@ -107,7 +107,12 @@ export function revealFile(root: string, relative: string) {
   if (!file) throw new Error(st.files.missing(relative));
   if (process.platform === 'darwin') execFile('open', ['-R', file]);
   else if (process.platform === 'win32') execFile('explorer.exe', [`/select,${file}`]);
-  else execFile('xdg-open', [path.dirname(file)]);
+  else openFolder(path.dirname(file));
+}
+
+/** Opens a folder (a session's own, found by the server) in the Finder, the Explorer, or the file manager elsewhere. */
+export function openFolder(folder: string) {
+  execFile(process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer.exe' : 'xdg-open', [folder], () => {});
 }
 
 /** Makes, renames or deletes a file or a folder; returns the folders whose list changed. A new file is opened by the page: see index.ts. */

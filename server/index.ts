@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { WebSocket } from 'ws';
 import { defaultFolder } from '../shared/folders.ts';
-import { isPermissionMode, type AccountsBrowser, type AppUpdate, type ClaudeAccount, type ClaudeInfo, type ClientMessage, type ServerMessage, type SessionOptions } from '../shared/protocol.ts';
+import { isPermissionMode, showsExtra, type AccountsBrowser, type AppUpdate, type ClaudeAccount, type ClaudeInfo, type ClientMessage, type ServerMessage, type SessionOptions } from '../shared/protocol.ts';
 import type { MusicApp } from '../shared/music.ts';
 import type { PhoneProblem } from '../shared/triggers.ts';
 import { createAsideRunner } from './aside.ts';
@@ -28,7 +28,7 @@ import { parseClientMessage } from './messages.ts';
 import { allowPhone, forgetPhone, loopbackPolicy, readOrCreateSecret } from './security.ts';
 import { findTailscale, readTailscaleName, serveBridge, serveMods, stopServing } from './tailscale.ts';
 import { listProjectDirectories, resolveAllowedDirectory, resolveInside, suggestRoots } from './paths.ts';
-import { changeFiles, fileAt, listFolder, readSessionFile, revealFile, writeSessionFile } from './files.ts';
+import { changeFiles, fileAt, listFolder, openFolder, readSessionFile, revealFile, writeSessionFile } from './files.ts';
 import { pathFinder } from './file-mentions.ts';
 import { windowsKnownFolders } from './system-folders.ts';
 import { SessionManager, TrustNeeded } from './sessions.ts';
@@ -41,7 +41,7 @@ import { createMessengerAgent } from './messenger-agent.ts';
 import { notify } from './notifier.ts';
 import { setServerLanguage, st } from './i18n/index.ts';
 import { Settings } from './settings.ts';
-import { findTerminals, openTerminal, openWebPage } from './desktop.ts';
+import { findTerminals, installedEditors, openInEditor, openTerminal, openWebPage } from './desktop.ts';
 import { createShellRunner } from './shell.ts';
 import { deleteNote, listNotes, readNote, renameNote, searchNotes, writeNote } from './journal.ts';
 import { AutomataWatch } from './automata-watch.ts';
@@ -547,6 +547,9 @@ const { server, hooksServer, modsServer } = createWebServer({ policy, distDir: D
   },
 });
 
+/** The computer's name, for the session windows (Preferences.sessionExtras.machineName). */
+const MACHINE = os.hostname();
+
 function onConnection(socket: WebSocket) {
   clients.add(socket);
   const send = (message: ServerMessage) => { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message)); };
@@ -565,6 +568,7 @@ function onConnection(socket: WebSocket) {
     sessions: sessions.list(), commands: sessions.getCommands(), folderCommands: sessions.getFolderCommands(), models: sessions.getModels(), quota: sessions.getQuota(), build: BUILD, crew: crew.list(),
     preferences: settings.preferences, onboarded: settings.onboarded, rootsLocked: config.rootsLocked, claudeDefaults, appUpdate,
     browsers: browsers.states(), browserAvailable: browsers.available, mods: mods.list(),
+    machine: MACHINE, editors: installedEditors().map(({ id, name }) => ({ id, name })),
   });
   checkClaudeVersion().catch((error: unknown) => log('cannot read the Claude Code version', error));
   if (account) send({ t: 'claudeAccount', account });
@@ -727,9 +731,17 @@ async function handle(message: ClientMessage, send: (message: ServerMessage) => 
     case 'restartOutdated': if (installedClaude) sessions.releaseOutdated(installedClaude); break;
     case 'restartApp': if (appUpdate?.state === 'ready') appPort?.postMessage({ t: 'restart' }); break;
     case 'checkApp': if (appUpdate?.state !== 'downloading' && appUpdate?.state !== 'ready') appPort?.postMessage({ t: 'check' }); break;
-    case 'changes': send({ t: 'changes', sessionId: message.sessionId, changes: await sessions.changes(message.sessionId) }); break;
+    case 'changes': send({ t: 'changes', sessionId: message.sessionId, changes: await sessions.changes(message.sessionId, showsExtra(settings.preferences, 'branchDiff')) }); break;
     case 'listFolder': send({ t: 'folder', sessionId: message.sessionId, folder: message.folder, entries: await listFolder(filesRoot(message.sessionId), message.folder) }); break;
     case 'revealFile': revealFile(filesRoot(message.sessionId), message.path); break;
+    // the session's own folder, still among the allowed ones (filesRoot), never one from the page
+    case 'openIn': {
+      if (!showsExtra(settings.preferences, 'openIn')) break;
+      const folder = filesRoot(message.sessionId);
+      if (message.target === 'folder') openFolder(folder);
+      else await openInEditor(folder, message.target);
+      break;
+    }
     case 'findPaths': {
       const root = mentionRoot(message);
       send({ t: 'paths', id: message.id, query: message.query, paths: root ? await findPaths(root, message.query) : [] });

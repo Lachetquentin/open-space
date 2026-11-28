@@ -18,7 +18,7 @@ import { setClockFormat } from '../lib/format.ts';
 import type { Festival } from '../../shared/festivals.ts';
 import { languageOf, type Language } from '../../shared/i18n.ts';
 import type { Job } from '../../shared/jobs.ts';
-import type { TerminalChoice } from '../../shared/terminal.ts';
+import type { EditorChoice, TerminalChoice } from '../../shared/terminal.ts';
 import { DEFAULT_PET } from '../../shared/pets.ts';
 import { startTrip, type PetTrip } from '../room/pet-trip.ts';
 import type { Look } from '../../shared/look.ts';
@@ -248,6 +248,9 @@ export interface CommandPostState {
   /** folders offered at the onboarding, once asked for */
   rootSuggestions: RootSuggestion[] | null;
   terminals: TerminalChoice[];
+  /** the computer's name and the code editors found on it ('' and none from an older server) */
+  machine: string;
+  editors: EditorChoice[];
   /** changes some of the settings (the server keeps them and tells every tab) */
   setPreferences: (changes: Partial<Preferences>) => boolean;
   /** a ding when a session finishes or needs the user */
@@ -536,6 +539,8 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   appUpdate: null,
   rootSuggestions: null,
   terminals: [],
+  machine: '',
+  editors: [],
   // a window out stays quiet: Open Space's page rings already
   sound: !outTarget && readPreference('sound', true),
   paletteOpen: false,
@@ -571,6 +576,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
           folderCommands: message.folderCommands ?? {}, models: message.models ?? [], quota: message.quota,
           preferences: message.preferences, onboarded: message.onboarded, rootsLocked: message.rootsLocked, claudeDefaults: message.claudeDefaults, appUpdate: message.appUpdate,
           browsers: message.browsers ?? {}, browserAvailable: message.browserAvailable ?? false, mods: message.mods ?? null,
+          machine: message.machine ?? '', editors: message.editors ?? [],
         });
         // after a reconnection the windows stay; after a reload they come back as they were
         const kept = s.selectedId && sessions[s.selectedId] ? { columns: s.columns, selectedId: s.selectedId } : s.selectedId ? null : readLayout();

@@ -11,7 +11,7 @@ import { hooksAddressOf } from '../shared/triggers.ts';
 import { NOTE_NAME } from '../shared/journal.ts';
 import { parseClaudeSettings } from '../shared/claude-settings.ts';
 import { parseDashboards } from '../shared/dashboards.ts';
-import { ACCOUNTS_BROWSERS, DEFAULT_PERMISSION_MODE, EFFORTS, GLASS_OPACITY, IDLE_COMPACT_MINUTES, ISOLATE_MODES, isPermissionMode, TIME_FORMATS, WINDOW_STYLES, type Preferences } from '../shared/protocol.ts';
+import { ACCOUNTS_BROWSERS, DEFAULT_PERMISSION_MODE, EFFORTS, GLASS_OPACITY, IDLE_COMPACT_MINUTES, ISOLATE_MODES, isPermissionMode, SESSION_EXTRAS, TIME_FORMATS, WINDOW_STYLES, type Preferences } from '../shared/protocol.ts';
 import { asArray, isJson } from './json.ts';
 import { expandHomePath, isFullPath } from '../shared/paths.ts';
 import { TERMINALS, type TerminalKind } from '../shared/terminal.ts';
@@ -91,6 +91,11 @@ export function parsePreferences(raw: unknown, home = os.homedir()): Partial<Pre
   }
   const hooksAddress = typeof raw.hooksAddress === 'string' ? hooksAddressOf(raw.hooksAddress) : null;
   if (hooksAddress !== null) found.hooksAddress = hooksAddress;
+  // a file from before them has none: every extra stays off
+  if (isJson(raw.sessionExtras)) {
+    const extras = raw.sessionExtras;
+    found.sessionExtras = Object.fromEntries(SESSION_EXTRAS.filter((extra) => typeof extras[extra] === 'boolean').map((extra) => [extra, extras[extra] as boolean]));
+  }
   return found;
 }
 

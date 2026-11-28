@@ -573,6 +573,10 @@ export class Session {
       names: this.subagentNames,
       peerName: this.deps.peerName,
       agentLaunch: (agentId) => agentLaunch(cwd, this.conversationId, agentId),
+      onAgentTask: (who, taskId) => {
+        this.info.subagents = this.info.subagents.map((subagent) => (subagent.id === who ? { ...subagent, taskId } : subagent));
+        this.publish();
+      },
       cwd,
     });
     const handle: ProcessHandle = this.deps.spawnProcess(
@@ -717,9 +721,10 @@ export class Session {
   /** Stops a "!" command still running (its whole process group); what it wrote so far is kept. */
   stopShell(shellId: string) { this.shells.get(shellId)?.stop.abort(); }
 
-  /** Stops one of the tasks Claude Code told of (stop_task), while its process lives: the tasks die with it. */
+  /** Stops one of the tasks Claude Code told of (stop_task), a sub-agent's included, while its process lives: the tasks die with it. */
   async stopTask(taskId: string) {
-    if (!this.process?.alive || !this.info.background?.some((task) => task.id === taskId)) return;
+    const known = this.info.background?.some((task) => task.id === taskId) || this.info.subagents.some((subagent) => subagent.taskId === taskId);
+    if (!this.process?.alive || !known) return;
     await this.process.control({ subtype: 'stop_task', task_id: taskId });
   }
 

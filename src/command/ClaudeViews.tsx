@@ -128,9 +128,10 @@ export function McpView({ sessionId, cwd, onBack }: ViewProps & { cwd: string })
 
 /**
  * How full the session's context is, in its header: a meter that turns orange then red with a "!", what to do in its
- * tooltip; a click opens the /context view.
+ * tooltip; a click opens the /context view. `inTokens`: the tokens used out of the window ("243K / 1M") instead of the
+ * percentage (Preferences.sessionExtras.contextTokens).
  */
-export function ContextChip({ context, onOpen }: { context: { used: number; max: number }; onOpen: () => void }) {
+export function ContextChip({ context, onOpen, inTokens = false }: { context: { used: number; max: number }; onOpen: () => void; inTokens?: boolean }) {
   const level = contextLevel(context);
   if (!level) return null;
   const words = t.session.context;
@@ -139,7 +140,7 @@ export function ContextChip({ context, onOpen }: { context: { used: number; max:
     <button type="button" className="cp-context-chip" data-level={level} aria-label={words.chip(t.common.percent(percent))} title={words.advice[level]} onClick={onOpen}>
       {level === 'high' && <AlertIcon />}
       <progress className="cp-meter" data-level={level} value={percent} max={100} aria-hidden="true" />
-      <span>{t.common.percent(percent)}</span>
+      <span>{inTokens ? `${tokens(context.used)} / ${tokens(context.max)}` : t.common.percent(percent)}</span>
     </button>
   );
 }

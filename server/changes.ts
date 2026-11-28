@@ -5,7 +5,7 @@
 import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { FileChange, SessionChanges } from '../shared/protocol.ts';
+import type { BranchDiff, FileChange, SessionChanges } from '../shared/protocol.ts';
 import { projectFolder } from './conversations.ts';
 import { asArray, asString, isJson } from './json.ts';
 
@@ -57,6 +57,28 @@ export function parseNumstat(text: string): Map<string, { added: number; removed
     counts.set(rest.join('\t'), { added: Number(added) || 0, removed: Number(removed) || 0, binary: added === '-' });
   }
   return counts;
+}
+
+/** "3 files changed, 12 insertions(+), 1 deletion(-)": the lines added and removed (git leaves out a count of zero). */
+export function parseShortstat(text: string): { added: number; removed: number } {
+  return { added: Number(/(\d+) insertions?\(\+\)/.exec(text)?.[1] ?? 0), removed: Number(/(\d+) deletions?\(-\)/.exec(text)?.[1] ?? 0) };
+}
+
+/**
+ * The lines the branch checked out in `cwd` adds and removes since it left its base, committed or not (new files git
+ * does not know yet aside): `isolatedBase` for an isolated session, else the branch's upstream. Local refs only, nothing
+ * is fetched. Null without a base, outside a repository, or when nothing changed.
+ */
+export async function branchDiff(cwd: string, isolatedBase?: string): Promise<BranchDiff | null> {
+  try {
+    const base = isolatedBase || (await git(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).catch(() => '')).trim();
+    if (!base) return null;
+    const start = (await git(cwd, ['merge-base', base, 'HEAD'])).trim();
+    const counts = parseShortstat(await git(cwd, ['diff', '--shortstat', '--no-ext-diff', start]));
+    return counts.added || counts.removed ? { base, ...counts } : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A unified diff of several files, cut into each file's part, by its path (the "b/" side, or "a/" for a deleted file). */

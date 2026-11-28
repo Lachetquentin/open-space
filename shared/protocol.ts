@@ -16,7 +16,7 @@ import type { RoomTheme } from './room-themes.ts';
 import type { Look } from './look.ts';
 import type { ModInfo, ModSettings } from './mods.ts';
 import type { MusicAction, MusicApp, MusicTrack, NowPlaying } from './music.ts';
-import type { TerminalChoice, TerminalKind } from './terminal.ts';
+import type { EditorChoice, EditorKind, TerminalChoice, TerminalKind } from './terminal.ts';
 import type { CostReport } from './usage.ts';
 
 /**
@@ -155,8 +155,11 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number];
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'auto';
 export const isPermissionMode = (value: unknown): value is PermissionMode => PERMISSION_MODES.some((mode) => mode === value);
 
-/** A sub-agent at work: `id` is the id of the Agent/Task call that started it (the `who` of its events). */
-export interface SubagentInfo { id: string; name: string; type: string }
+/**
+ * A sub-agent at work: `id` is the id of the Agent/Task call that started it (the `who` of its events).
+ * `taskId`: its task in Claude Code, to stop it with stop_task (absent until Claude Code tells it, and for a workflow's agents).
+ */
+export interface SubagentInfo { id: string; name: string; type: string; taskId?: string }
 /**
  * A command Claude Code runs in the background (Bash with run_in_background, Monitor…): it wakes the session up when it ends.
  * `kind`: a Bash command (Claude Code also counts a Monitor call as one), or a monitor of an MCP server or a web socket; left
@@ -196,8 +199,13 @@ export interface FileDiff { path: string; created: boolean; added: number; remov
 
 /** What a tool call gave back, for the thread: its first lines and how many it had (`read`: a file read, only counted). */
 export interface ToolOutput { lines: string[]; total: number; read?: true }
-/** What a session changed: the files with changes not committed yet, the latest first; `touched`: all the files it wrote. */
-export interface SessionChanges { files: FileChange[]; added: number; removed: number; touched: number }
+/** What a session changed: the files with changes not committed yet, the latest first; `touched`: all the files it wrote.
+ * `branch`: the lines its whole branch adds and removes against its base, committed or not, when the settings ask for
+ * it (Preferences.sessionExtras.branchDiff), a base is found and something changed.
+ */
+export interface SessionChanges { files: FileChange[]; added: number; removed: number; touched: number; branch?: BranchDiff }
+/** `base`: what the branch is measured from (an isolated session's base, else the branch's upstream). */
+export interface BranchDiff { base: string; added: number; removed: number }
 
 /** What the page asks of an isolated session's branch (the `branch` message). */
 export const BRANCH_ACTIONS = ['merge', 'pr', 'discard', 'refresh', 'dismiss'] as const;
@@ -599,7 +607,19 @@ export interface Preferences {
   accountsBrowser: AccountsBrowser;
   /** the dashboards of mods (shared/dashboards.ts); absent until the first one is made */
   dashboards?: Dashboard[];
+  /** what the session window also shows (see SESSION_EXTRAS); absent, or an extra left out: not shown */
+  sessionExtras?: Partial<Record<SessionExtra, boolean>>;
 }
+
+/**
+ * What the session window can also show, each off until turned on in the settings: its full folder path, the computer's
+ * name, the context in tokens, the lines of its whole branch against its base, how long each sub-agent has worked, a
+ * stop button on those at work, and the menu items that open its folder in the file manager or a code editor.
+ */
+export const SESSION_EXTRAS = ['fullPath', 'machineName', 'contextTokens', 'branchDiff', 'agentDurations', 'agentStop', 'openIn'] as const;
+export type SessionExtra = (typeof SESSION_EXTRAS)[number];
+/** Whether the settings turned this extra of the session window on. */
+export const showsExtra = (preferences: Pick<Preferences, 'sessionExtras'>, extra: SessionExtra) => preferences.sessionExtras?.[extra] === true;
 
 /**
  * The page a session's agent last had in the user's own Chrome (Preferences.accountsBrowser), read from its
@@ -760,10 +780,12 @@ export type ClientMessage =
   | { t: 'remoteControl'; sessionId: string; enabled: boolean }
   /** opens a terminal window on the user's computer, in the folder of the session given (the server finds it), else the default folder */
   | { t: 'openTerminal'; sessionId?: string }
+  /** opens the session's folder (the server finds it) in the Finder or the Explorer, or in one of the editors found (hello.editors) */
+  | { t: 'openIn'; sessionId: string; target: 'folder' | EditorKind }
   /** runs a command typed with "!" in the session's folder, without Claude; Claude learns of it with the next message */
   | { t: 'shell'; sessionId: string; command: string }
   | { t: 'stopShell'; sessionId: string; shellId: string }
-  /** stops one of the session's background tasks (SessionInfo.background), through Claude Code's stop_task */
+  /** stops one of the session's background tasks (SessionInfo.background) or sub-agents at work (SubagentInfo.taskId), through Claude Code's stop_task */
   | { t: 'stopTask'; sessionId: string; taskId: string }
   /** asks a session's Claude Code for one of the panel's views (its process starts if needed) */
   | { t: 'inspect'; sessionId: string; view: InspectView }
@@ -842,7 +864,7 @@ export type ClientMessage =
   | { t: 'browserInput'; sessionId: string; lane: number; input: BrowserInput };
 
 export type ServerMessage =
-  | { t: 'hello'; claude: ClaudeInfo; roots: string[]; sessions: SessionInfo[]; commands: SlashCommand[]; folderCommands: Record<string, SlashCommand[]>; models: ModelChoice[]; quota: Quota | null; build: string; crew: CrewMember[]; preferences: Preferences; onboarded: boolean; rootsLocked: boolean; claudeDefaults: ClaudeDefaults; appUpdate: AppUpdate | null; /** by browserId (shared/browser.ts) */ browsers: Record<string, BrowserState>; browserAvailable: boolean; /** none from a server older than the mods */ mods?: ModInfo[] }
+  | { t: 'hello'; claude: ClaudeInfo; roots: string[]; sessions: SessionInfo[]; commands: SlashCommand[]; folderCommands: Record<string, SlashCommand[]>; models: ModelChoice[]; quota: Quota | null; build: string; crew: CrewMember[]; preferences: Preferences; onboarded: boolean; rootsLocked: boolean; claudeDefaults: ClaudeDefaults; appUpdate: AppUpdate | null; /** by browserId (shared/browser.ts) */ browsers: Record<string, BrowserState>; browserAvailable: boolean; /** none from a server older than the mods */ mods?: ModInfo[]; /** the computer's name */ machine?: string; /** the code editors found on the computer */ editors?: EditorChoice[] }
   /** a session asked for in a folder that runs code of its own and was never trusted: the user decides (SessionOptions.trust) */
   | { t: 'trustNeeded'; cwd: string; code: FolderCode }
   /** the settings changed (from any tab); `roots`: the folders in effect */

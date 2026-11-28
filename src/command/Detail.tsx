@@ -1,5 +1,5 @@
 import { memo, use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SessionInfo } from '../../shared/protocol.ts';
+import { showsExtra, type SessionInfo } from '../../shared/protocol.ts';
 import { MAX_TAG, MAX_TAGS, parseTags, withoutTag } from '../../shared/tags.ts';
 import { Tooltip } from '../design/Tooltip.tsx';
 import { t } from '../i18n/index.ts';
@@ -17,12 +17,13 @@ import { AsidePanel } from './AsidePanel.tsx';
 import { BrowserView } from './BrowserView.tsx';
 import { ChangesView, LineCounts } from './Changes.tsx';
 import { ContextChip, ContextView, McpView, UsageView } from './ClaudeViews.tsx';
+import { CopyPath } from './Copyable.tsx';
 import { Composer, RemoteButton } from './Composer.tsx';
 import { INTERACTIVE, WindowDragContext } from './useWindowDrag.ts';
 import { Feed, type Subagent } from './Feed.tsx';
 import { FilesView } from './FilesView.tsx';
 import { SessionTabs } from './SessionTabs.tsx';
-import { BranchIcon, CloseIcon, DuplicateIcon, FolderIcon, MaximizeIcon, MinimizeIcon, MoreIcon, KeyIcon, PencilIcon, PhoneIcon, PlusIcon, PopOutIcon, PowerIcon, RestIcon, SearchIcon, TagIcon, TerminalIcon } from './Icons.tsx';
+import { BranchIcon, CloseIcon, CodeIcon, DuplicateIcon, FolderIcon, FolderOpenIcon, MachineIcon, MaximizeIcon, MinimizeIcon, MoreIcon, KeyIcon, PencilIcon, PhoneIcon, PlusIcon, PopOutIcon, PowerIcon, RestIcon, SearchIcon, TagIcon, TerminalIcon } from './Icons.tsx';
 import { OutControls } from './OutControls.tsx';
 import { Modal } from './Modal.tsx';
 import { PermissionPrompt } from './PermissionPrompt.tsx';
@@ -45,6 +46,9 @@ const NO_EVENTS: never[] = [];
  */
 function SessionMenu({ session, searchOpen, onSearch, onKeys, onRest, onSwitchOff, onRename, zoom, popOut }: { session: SessionInfo; searchOpen: boolean; onSearch: () => void; onKeys: () => void; onRest: () => void; onSwitchOff: () => void; onRename: () => void; zoom?: { zoomed: boolean; toggle: () => void }; popOut?: () => void }) {
   const send = useSessions((s) => s.send);
+  // its folder in the file manager and the editors found, when the settings show them
+  const openIn = useSessions((s) => showsExtra(s.preferences, 'openIn'));
+  const editors = useSessions((s) => s.editors);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -72,6 +76,10 @@ function SessionMenu({ session, searchOpen, onSearch, onKeys, onRest, onSwitchOf
           )}
           <button type="button" role="menuitem" title={words.keysTitle} onClick={pick(onKeys)}><KeyIcon />{words.keys}</button>
           <button type="button" role="menuitem" title={words.terminalHereTitle} onClick={pick(() => useSessions.getState().openTerminal(session.id))}><TerminalIcon />{words.terminalHere}</button>
+          {openIn && <button type="button" role="menuitem" title={words.openFolderTitle} onClick={pick(() => send({ t: 'openIn', sessionId: session.id, target: 'folder' }))}><FolderOpenIcon />{words.openFolder}</button>}
+          {openIn && editors.map((editor) => (
+            <button key={editor.id} type="button" role="menuitem" title={words.openInEditorTitle(editor.name)} onClick={pick(() => send({ t: 'openIn', sessionId: session.id, target: editor.id }))}><CodeIcon />{words.openInEditor(editor.name)}</button>
+          ))}
           {!session.resting && <button type="button" role="menuitem" title={words.restTitle} onClick={pick(onRest)}><RestIcon />{words.rest}</button>}
           <button type="button" role="menuitem" data-variant="danger" title={words.switchOffTitle} onClick={pick(onSwitchOff)}><PowerIcon />{words.switchOff}</button>
         </div>
@@ -119,13 +127,17 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
   const live = useSessions((s) => s.connection === 'live');
   const panelView = useSessions((s) => (active ? s.panelView : (s.keptViews[sessionId] ?? 'thread')));
   const showPanel = useSessions((s) => s.showPanel);
-  // what it changed, asked again at the end of each of its turns and when a sub-agent comes or goes
+  // what the settings add to the window (Preferences.sessionExtras)
+  const preferences = useSessions((s) => s.preferences);
+  const machine = useSessions((s) => s.machine);
+  const branchShown = showsExtra(preferences, 'branchDiff');
+  // what it changed, asked again at the end of each of its turns and when a sub-agent comes or goes (and for the whole branch once shown)
   const turns = session?.turns, helpers = session?.subagents.length, isolated = !!session?.worktree;
   useEffect(() => {
     if (live && turns !== undefined) send({ t: 'changes', sessionId });
     // a branch may change outside its turns too (a commit from the terminal): looked at again when the window opens
     if (live && isolated) send({ t: 'branch', sessionId, action: 'refresh' });
-  }, [sessionId, live, turns, helpers, isolated, send]);
+  }, [sessionId, live, turns, helpers, isolated, branchShown, send]);
   const openBranches = useSessions((s) => s.openBranches);
   // its project beside its name, while the header shows them all (and they are several), unless it is the default folder
   const { projects, project } = useProjects();
@@ -239,7 +251,7 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
           {session.secrets && (
             <button type="button" className="cp-tag" title={t.session.detail.keysTitle} onClick={() => openSecrets(session.id)}><KeyIcon />{t.session.detail.keysHeld(session.secrets.length)}</button>
           )}
-          {session.context && <ContextChip context={session.context} onOpen={() => showPanel('context')} />}
+          {session.context && <ContextChip context={session.context} onOpen={() => showPanel('context')} inTokens={showsExtra(preferences, 'contextTokens')} />}
           {changes && changes.files.length > 0 && (
             <button
               type="button" className="cp-changes-chip" aria-pressed={panelView === 'changes'} title={t.session.detail.changesTitle}
@@ -249,7 +261,15 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
               <span>{t.session.files(changes.files.length)}</span>
             </button>
           )}
+          {branchShown && changes?.branch && (
+            <span className="cp-branch-diff" title={t.session.detail.branchDiffTitle(changes.branch.base)}>
+              <LineCounts added={changes.branch.added} removed={changes.branch.removed} />
+              <span>{t.session.detail.branchDiff(changes.branch.base)}</span>
+            </span>
+          )}
           {pages.length > 0 && <PublishedPages pages={pages} />}
+          {showsExtra(preferences, 'machineName') && machine && <span className="cp-detail__machine" title={t.session.detail.machineTitle}><MachineIcon />{machine}</span>}
+          {showsExtra(preferences, 'fullPath') && <CopyPath path={session.cwd} copyLabel={t.session.detail.copyPath} />}
         </div>
         {session.untrusted && <p className="cp-detail__meta cp-detail__untrusted" title={t.session.detail.untrustedTitle}>{t.session.detail.untrusted}</p>}
         {switchingOff && asksBeforeSwitchingOff(session) && <SwitchOffDialog session={session} onClose={() => setSwitchingOff(false)} />}

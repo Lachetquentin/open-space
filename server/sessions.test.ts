@@ -1954,6 +1954,17 @@ describe('process life cycle', () => {
     await manager.shutdown();
   });
 
+  it('stops a sub-agent at work by the task Claude Code gave it', async () => {
+    const { manager, processes } = setup();
+    await manager.init();
+    const { id } = await manager.create({ cwd: projectA(), text: 'count the files' });
+    // up to the sub-agent's task_started
+    processes[0].feed('subagent-forwarded', 0, 4);
+    await manager.stopTask(id, 'a278f3812cad2ddcb');
+    assert.deepEqual(processes[0].controls.filter((request) => request.subtype !== 'get_usage'), [{ subtype: 'stop_task', task_id: 'a278f3812cad2ddcb' }]);
+    await manager.shutdown();
+  });
+
   it('does not wake a released session up to stop a command that died with its process', async () => {
     const { manager, processes } = setup();
     await manager.init();

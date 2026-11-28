@@ -7,7 +7,7 @@ import type { TerminalKind } from '../../shared/terminal.ts';
 import { applyGlassOpacity } from '../design/glass.ts';
 import { IS_MAC, IS_WINDOWS } from '../lib/platform.ts';
 import { INBOUND_POLICIES, WORKFLOW_SIZES, type ClaudeSettings, type ClaudeSwitch } from '../../shared/claude-settings.ts';
-import { ACCOUNTS_BROWSERS, EFFORTS, GLASS_OPACITY, WINDOW_STYLES, IDLE_COMPACT_MINUTES, ISOLATE_MODES, PERMISSION_MODES, TIME_FORMATS, type Preferences } from '../../shared/protocol.ts';
+import { ACCOUNTS_BROWSERS, EFFORTS, GLASS_OPACITY, WINDOW_STYLES, IDLE_COMPACT_MINUTES, ISOLATE_MODES, PERMISSION_MODES, showsExtra, TIME_FORMATS, type Preferences, type SessionExtra } from '../../shared/protocol.ts';
 import { ROOM_THEMES, type RoomTheme } from '../../shared/room-themes.ts';
 import { matchesAll } from '../../shared/search.ts';
 import { t } from '../i18n/index.ts';
@@ -18,7 +18,7 @@ import { CONFIG_LABELS, settingEntries, type SettingRow } from '../state/setting
 import {
   ActivityIcon, AgentIcon, AutomatonIcon, TagIcon, BellIcon, DiffIcon, BranchIcon, PipIcon, CursorIcon, DownloadIcon, CalendarIcon, ChangelogIcon, ChartIcon, ClockIcon, CloseIcon, CoffeeIcon, CopyIcon, RadioIcon, CrewIcon, DeskIcon, ExternalLinkIcon, FestivalIcon, FolderIcon,
   CompactIcon, FreeWindowsIcon, GaugeIcon, GlobeIcon, InboxIcon, InfoIcon, ItsMeIcon, KeyIcon, KeyboardIcon, LanguageIcon, MessageIcon, NotesIcon, PlanIcon, RefreshIcon, SearchIcon, SettingsIcon, SoundIcon,
-  OpacityIcon, PaletteIcon, PhoneIcon, SparklesIcon, TerminalIcon, ThinkingIcon, TimerIcon, TuneIcon, UltracodeIcon, WebhookIcon, WorkflowIcon,
+  OpacityIcon, PaletteIcon, PhoneIcon, SparklesIcon, TerminalIcon, ThinkingIcon, TimerIcon, TuneIcon, UltracodeIcon, WebhookIcon, WorkflowIcon, MachineIcon, StopIcon,
 } from './Icons.tsx';
 import { Copyable } from './Copyable.tsx';
 import { AccountAction } from './AccountAction.tsx';
@@ -46,7 +46,10 @@ const SECTION_ICONS: Record<SettingsSection, () => ReactNode> = {
 type Group = keyof typeof t.settings.prefs.groups;
 /** The rows of each section, by group, in the order shown. */
 const LAYOUT: Readonly<Partial<Record<SettingsSection, readonly (readonly [Group, readonly SettingRow[]])[]>>> = {
-  general: [['appearance', ['language', 'timeFormat']], ...(IS_WINDOWS ? [['system', ['terminal']] as const] : []), ['text', ['timestamps', 'turnDuration', 'detailedActions', 'copyOnSelect']], ['alerts', ['sound', 'notifications']]],
+  general: [
+    ['appearance', ['language', 'timeFormat']], ...(IS_WINDOWS ? [['system', ['terminal']] as const] : []), ['text', ['timestamps', 'turnDuration', 'detailedActions', 'copyOnSelect']],
+    ['sessionWindow', ['showFullPath', 'showMachineName', 'showContextTokens', 'showBranchDiff', 'showAgentDurations', 'showAgentStop', 'showOpenIn']], ['alerts', ['sound', 'notifications']],
+  ],
   sessions: [['defaults', ['model', 'effort', 'permissions', 'remoteByDefault']], ['agents', ['agentNote', 'autoTag', 'autoTagRule']], ['branches', ['isolate']], ['browser', ['accountsBrowser', 'autoPip', 'agentCursor']]],
   claude: [
     ['reasoning', ['thinking', 'outputStyle', 'responseLanguage', 'promptSuggestions']], ['autonomy', ['autoCompact', 'idleCompact', 'autoContinue', 'autoModeInPlan']],
@@ -108,6 +111,12 @@ const CLAUDE_SWITCH_ROWS: Readonly<Partial<Record<SettingRow, readonly [ClaudeSw
   thinking: ['alwaysThinkingEnabled', ThinkingIcon], autoCompact: ['autoCompactEnabled', CompactIcon], autoContinue: ['autoContinueAtUsageLimit', RefreshIcon],
   autoModeInPlan: ['useAutoModeDuringPlan', PlanIcon], workflows: ['enableWorkflows', WorkflowIcon], ultracodeKeyword: ['workflowKeywordTriggerEnabled', UltracodeIcon],
   artifacts: ['enableArtifact', FreeWindowsIcon],
+};
+
+/** Each row of the session window's extras, by the extra it turns on (Preferences.sessionExtras). */
+const EXTRA_ROWS: Readonly<Partial<Record<SettingRow, readonly [SessionExtra, () => ReactNode]>>> = {
+  showFullPath: ['fullPath', FolderIcon], showMachineName: ['machineName', MachineIcon], showContextTokens: ['contextTokens', GaugeIcon], showBranchDiff: ['branchDiff', BranchIcon],
+  showAgentDurations: ['agentDurations', TimerIcon], showAgentStop: ['agentStop', StopIcon], showOpenIn: ['openIn', ExternalLinkIcon],
 };
 
 const capitalized = (text: string) => text.charAt(0).toLocaleUpperCase() + text.slice(1);
@@ -180,6 +189,16 @@ function SettingsEditor() {
     const rows = words.rows;
     const flash = flashRow === id;
     const config = CONFIG_LABELS[id];
+    const extraSwitch = EXTRA_ROWS[id];
+    if (extraSwitch) {
+      const [extra, Icon] = extraSwitch;
+      const { title, hint } = rows[id as keyof typeof rows] as { title: string; hint: string };
+      return (
+        <Row key={id} id={id} flash={flash} icon={<Icon />} title={title} hint={hint}>
+          <Switch checked={showsExtra(draft, extra)} onChange={(shown) => change({ sessionExtras: { ...draft.sessionExtras, [extra]: shown } })} label={title} />
+        </Row>
+      );
+    }
     const claudeSwitch = CLAUDE_SWITCH_ROWS[id];
     if (claudeSwitch) {
       const [key, Icon] = claudeSwitch;

@@ -10,6 +10,13 @@ describe('parseClientMessage', () => {
     assert.equal(parseClientMessage({ t: 'accountsBrowser', browser: 'chrome' }), null);
   });
 
+  it('opens a session\'s folder in the file manager or a known editor, never a folder or a program from the client', () => {
+    assert.deepEqual(parseClientMessage({ t: 'openIn', sessionId: 's1', target: 'folder', folder: '/etc' }), { t: 'openIn', sessionId: 's1', target: 'folder' });
+    assert.deepEqual(parseClientMessage({ t: 'openIn', sessionId: 's1', target: 'cursor' }), { t: 'openIn', sessionId: 's1', target: 'cursor' });
+    assert.equal(parseClientMessage({ t: 'openIn', sessionId: 's1', target: '/Applications/Calculator.app' }), null);
+    assert.equal(parseClientMessage({ t: 'openIn', target: 'folder' }), null);
+  });
+
   it('reads openTerminal with or without a session, and nothing else', () => {
     assert.deepEqual(parseClientMessage({ t: 'openTerminal' }), { t: 'openTerminal' });
     assert.deepEqual(parseClientMessage({ t: 'openTerminal', sessionId: 's1' }), { t: 'openTerminal', sessionId: 's1' });

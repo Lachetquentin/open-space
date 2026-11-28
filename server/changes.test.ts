@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
-import { editedFiles, parseNumstat, sessionChanges, splitPatch } from './changes.ts';
+import { branchDiff, editedFiles, parseNumstat, parseShortstat, sessionChanges, splitPatch } from './changes.ts';
 import { projectFolder } from './conversations.ts';
 
 const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'office-changes-')));
@@ -65,5 +65,39 @@ describe('changes', () => {
     assert.equal(changes.files[0].patch, '@@ -0,0 +1,2 @@\n+a\n+b\n');
     assert.match(changes.files[3].patch, /^@@ .* @@\n one\n-two\n\+TWO\n\+three\n$/);
     assert.deepEqual({ added: changes.added, removed: changes.removed, touched: changes.touched }, { added: 4, removed: 2, touched: 6 });
+  });
+
+  it('reads the lines of git shortstat, a count git leaves out being zero', () => {
+    assert.deepEqual(parseShortstat(' 3 files changed, 12 insertions(+), 1 deletion(-)\n'), { added: 12, removed: 1 });
+    assert.deepEqual(parseShortstat(' 1 file changed, 2 deletions(-)\n'), { added: 0, removed: 2 });
+    assert.deepEqual(parseShortstat(''), { added: 0, removed: 0 });
+  });
+
+  it('measures a whole branch against its base, committed or not: the isolated base first, else the upstream, else nothing', async () => {
+    const repo = path.join(base, 'branchy');
+    mkdirSync(repo);
+    const run = (...args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd: repo });
+    run('init', '-q', '-b', 'main');
+    writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n');
+    run('add', '.');
+    run('commit', '-q', '-m', 'start');
+    run('branch', 'release');
+    run('checkout', '-q', '-b', 'feature');
+    assert.equal(await branchDiff(repo), null, 'no upstream, no base');
+    run('branch', '--set-upstream-to=main');
+    assert.equal(await branchDiff(repo), null, 'nothing changed');
+    writeFileSync(path.join(repo, 'a.txt'), 'one\nTWO\nthree\n');
+    run('commit', '-q', '-am', 'work');
+    // moving on, main's own commits do not count: only what the branch did since it left it
+    run('checkout', '-q', 'main');
+    writeFileSync(path.join(repo, 'b.txt'), 'main only\n');
+    run('add', '.');
+    run('commit', '-q', '-m', 'elsewhere');
+    run('checkout', '-q', 'feature');
+    writeFileSync(path.join(repo, 'a.txt'), 'one\nTWO\n');
+    assert.deepEqual(await branchDiff(repo), { base: 'main', added: 1, removed: 1 }, 'the commit and the change not committed, against the upstream');
+    run('checkout', '-q', '-b', 'isolated');
+    assert.deepEqual(await branchDiff(repo, 'release'), { base: 'release', added: 1, removed: 1 }, 'an isolated session\'s base, though the branch has no upstream');
+    assert.equal(await branchDiff(base), null, 'outside a repository');
   });
 });

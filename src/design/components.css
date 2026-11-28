@@ -504,6 +504,23 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 }
 .cp-changes-chip:hover, .cp-changes-chip[aria-pressed='true'], .cp-changes-chip[aria-expanded='true'] { border-color: var(--color-accent); color: var(--color-text); }
 .cp-changes-chip .cp-icon { width: 0.75rem; height: 0.75rem; }
+/* ── What the settings add to a session's header (Preferences.sessionExtras) ── */
+/* its whole branch against its base: a chip like the changes', that opens nothing */
+.cp-branch-diff {
+  display: inline-flex; align-items: center; gap: var(--space-2); height: var(--badge-height); padding: 0 var(--space-2); border-radius: 999px; white-space: nowrap;
+  border: var(--border-width) dashed var(--color-border-strong); color: var(--color-text-muted); font-size: var(--text-xs);
+}
+/* the computer's name: small and quiet */
+.cp-detail__machine { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--text-xs); white-space: nowrap; }
+.cp-detail__machine .cp-icon { width: 0.75rem; height: 0.75rem; flex: none; }
+/* its folder's full path: cut from its start when long (the folder's own name stays), copied on a click */
+.cp-copy-path {
+  display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; max-width: 100%; height: var(--badge-height); padding: 0 var(--space-2);
+  border: var(--border-width) solid transparent; border-radius: 999px; background: none; color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--text-xs); cursor: pointer;
+}
+.cp-copy-path:hover, .cp-copy-path:focus-visible { border-color: var(--color-border-strong); color: var(--color-text); }
+.cp-copy-path .cp-icon { width: 0.75rem; height: 0.75rem; flex: none; }
+.cp-copy-path__text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
 /* ── A session's browser: a chip in its header (lit while its agent drives), a view in place of the thread (BrowserView.tsx) ── */
 /* its agent is at work in its browser */
 .cp-tabs__list [data-live='true'] .cp-icon { color: var(--tone-work); animation: cp-pulse 1.4s ease-in-out infinite; }
@@ -808,8 +825,14 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 }
 @keyframes cp-tabs-breathe { 50% { box-shadow: 0 0 0 3px var(--tone-reply-soft), 0 0 0 1px var(--tone-reply); } }
 .cp-tabs__menu { min-width: 17rem; max-width: min(26rem, calc(100vw - 2 * var(--space-2))); max-height: min(24rem, calc(100vh - 2 * var(--space-2))); margin: 0; list-style: none; }
-.cp-detail__menu.cp-tabs__menu button { width: 100%; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; white-space: normal; }
-.cp-detail__menu.cp-tabs__menu button[aria-current='true'] { background: var(--color-surface); }
+.cp-detail__menu.cp-tabs__menu .cp-tabs__agent { width: 100%; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; white-space: normal; }
+.cp-detail__menu.cp-tabs__menu .cp-tabs__agent[aria-current='true'] { background: var(--color-surface); }
+/* a sub-agent at work, with its stop button beside it (Preferences.sessionExtras.agentStop) */
+.cp-tabs__menu li:has(> .cp-tabs__agent-stop) { display: flex; align-items: center; gap: var(--space-1); }
+.cp-tabs__menu li:has(> .cp-tabs__agent-stop) > .cp-tabs__agent { flex: 1; min-width: 0; }
+.cp-detail__menu .cp-tabs__agent-stop { flex: none; color: var(--color-text-muted); }
+.cp-detail__menu .cp-tabs__agent-stop:hover, .cp-detail__menu .cp-tabs__agent-stop:focus-visible { color: var(--tone-error); }
+.cp-feed__agent-time { font-variant-numeric: tabular-nums; }
 /* icons only, the name on the tab shown; in a narrow window the sub-agents' button keeps only its icon too */
 .cp-tabs__list button { padding-inline: var(--space-2); }
 .cp-tabs__list button:not([aria-selected='true']) > span { display: none; }

@@ -137,6 +137,8 @@ export interface NormalizerOptions {
   peerName?: (address: string) => string;
   /** how a sub-agent was launched, by its agentId: one woken up again may come from an earlier process of the conversation */
   agentLaunch?: (agentId: string) => AgentLaunch | null;
+  /** a sub-agent at work (`who`, its id) got its task in Claude Code: what stop_task stops it with */
+  onAgentTask?: (who: string, taskId: string) => void;
   /** the session's folder, where the Artifact tool's relative paths start */
   cwd?: string;
 }
@@ -325,14 +327,20 @@ export class Normalizer {
         // stopped: its messages carry the id of the Agent call that first started it, its end the id of the SendMessage
         // call (fixtures/subagent-revived.jsonl, 2.1.303)
         const via = asString(message.tool_use_id);
-        if (message.task_type !== 'local_agent' || !this.sentMessages.has(via)) break;
+        if (message.task_type !== 'local_agent') break;
         const agentId = asString(message.task_id);
+        // the task of a sub-agent just hired by its Agent call (fixtures/subagent-forwarded.jsonl)
+        if (!this.sentMessages.has(via)) {
+          if (agentId && this.present.has(via)) this.options.onAgentTask?.(via, agentId);
+          break;
+        }
         const launch = this.options.agentLaunch?.(agentId) ?? null;
         const call = this.agentTasks.get(agentId) ?? launch?.call;
         if (!call || this.present.has(call)) break;
         this.revived.set(via, call);
         this.agentTasks.set(agentId, call);
         this.hire(call, launch?.type ?? '', asString(message.description), this.sentMessages.get(via) ?? '');
+        this.options.onAgentTask?.(call, agentId);
         break;
       }
       case 'task_progress': {

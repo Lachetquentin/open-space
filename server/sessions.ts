@@ -33,7 +33,7 @@ import { storedTags } from '../shared/tags.ts';
 import { cleanPending, MAX_DISMISSED } from '../shared/pending.ts';
 import { readGitPending } from './pending-git.ts';
 import { pickSessionName } from './names.ts';
-import { sessionChanges } from './changes.ts';
+import { branchDiff, sessionChanges } from './changes.ts';
 import { listProjectDirectories, resolveAllowedDirectory } from './paths.ts';
 import { Session, newSessionInfo, type SessionDeps, type StoredInfo, type TurnEnd } from './session.ts';
 import { SessionLog, switchedOffFolder } from './session-log.ts';
@@ -535,10 +535,15 @@ export class SessionManager {
   folderOf(id: string): string | null { return this.sessions.get(id)?.snapshot().cwd ?? null; }
   directories(): string[] { return listProjectDirectories(this.deps.config.roots); }
 
-  /** What a session changed in its files (see changes.ts). */
-  changes(id: string): Promise<SessionChanges> {
+  /** What a session changed in its files (see changes.ts); `branch`: with the lines of its whole branch against its base. */
+  async changes(id: string, branch = false): Promise<SessionChanges> {
     const { cwd, conversationId, worktree } = this.session(id).snapshot();
-    return sessionChanges(cwd, conversationId ?? id, (directory) => resolveAllowedDirectory(directory, this.roots()) !== null, this.deps.home, worktree?.base);
+    const allowed = (directory: string) => resolveAllowedDirectory(directory, this.roots()) !== null;
+    const [changes, whole] = await Promise.all([
+      sessionChanges(cwd, conversationId ?? id, allowed, this.deps.home, worktree?.base),
+      branch && allowed(cwd) ? branchDiff(cwd, worktree?.base) : null,
+    ]);
+    return whole ? { ...changes, branch: whole } : changes;
   }
 
   /** The Claude Code conversations of an allowed folder that are not open here yet; with `query`, those that contain its words. */

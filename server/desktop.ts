@@ -1,11 +1,11 @@
 // What Open Space opens on the user's computer: a terminal window, from the room (a click on the user's own screen),
 // and a web page, in the default browser (an MCP server's sign-in).
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { st } from './i18n/index.ts';
-import type { TerminalChoice, TerminalKind } from '../shared/terminal.ts';
+import type { EditorChoice, EditorKind, TerminalChoice, TerminalKind } from '../shared/terminal.ts';
 
 const ITERM = ['/Applications/iTerm.app', path.join(os.homedir(), 'Applications', 'iTerm.app')];
 
@@ -53,6 +53,58 @@ export function openTerminal(folder: string, kind: TerminalKind = 'cmd'): Promis
   const application = ITERM.find((candidate) => existsSync(candidate)) ?? 'Terminal';
   return new Promise((resolve, reject) => {
     execFile('/usr/bin/open', ['-a', application, folder], { timeout: 10_000 }, (error) => (error ? reject(new Error(st.terminal.failed)) : resolve()));
+  });
+}
+
+/** An editor found, and the program that opens a folder in it: `args`, then the folder. */
+export interface EditorLaunch extends EditorChoice { file: string; args: string[] }
+
+/**
+ * Where each editor is: its command on PATH, its program on Windows (from the folder of its command, else where its
+ * installer puts it; the command itself is a .cmd, which only runs through a shell), its app on macOS.
+ */
+const EDITOR_PLACES: Readonly<Record<EditorKind, { name: string; command: string; fromCommand: string[]; installed: string[]; app: string }>> = {
+  vscode: { name: 'VS Code', command: 'code', fromCommand: ['..', 'Code.exe'], installed: ['Microsoft VS Code/Code.exe'], app: 'Visual Studio Code.app' },
+  cursor: { name: 'Cursor', command: 'cursor', fromCommand: ['..', '..', '..', 'Cursor.exe'], installed: ['cursor/Cursor.exe'], app: 'Cursor.app' },
+};
+
+/** The code editors installed, by fixed names only: nothing the page sends ever names a program. */
+export function findEditors(env: NodeJS.ProcessEnv = process.env, exists: (file: string) => boolean = existsSync, platform: NodeJS.Platform = process.platform, home = os.homedir()): EditorLaunch[] {
+  const search = (env.PATH ?? env.Path ?? '').split(path.delimiter).filter((folder) => path.isAbsolute(folder));
+  const programs = [env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs'), env.ProgramFiles, env['ProgramFiles(x86)']].filter((folder): folder is string => !!folder);
+  return (Object.keys(EDITOR_PLACES) as EditorKind[]).flatMap((id): EditorLaunch[] => {
+    const { name, command, fromCommand, installed, app } = EDITOR_PLACES[id];
+    const found = (files: string[], args: string[] = []) => {
+      const file = files.find((candidate) => path.isAbsolute(candidate) && exists(candidate));
+      return file ? [{ id, name, file, args }] : null;
+    };
+    if (platform === 'win32') {
+      return found([
+        ...search.filter((folder) => exists(path.join(folder, `${command}.cmd`))).map((folder) => path.resolve(folder, ...fromCommand)),
+        ...programs.flatMap((folder) => installed.map((file) => path.join(folder, file))),
+      ]) ?? [];
+    }
+    const onPath = found(search.map((folder) => path.join(folder, command)));
+    if (onPath || platform !== 'darwin') return onPath ?? [];
+    const bundle = ['/Applications', path.join(home, 'Applications')].map((folder) => path.join(folder, app)).find(exists);
+    return bundle ? [{ id, name, file: '/usr/bin/open', args: ['-a', bundle] }] : [];
+  });
+}
+
+let editors: EditorLaunch[] | null = null;
+/** The editors found, looked for once. */
+export const installedEditors = () => { editors ??= findEditors(); return editors; };
+
+/** Opens a folder in one of the editors found, on its own: it stays open when Open Space stops. */
+export function openInEditor(folder: string, kind: EditorKind): Promise<void> {
+  const editor = installedEditors().find((each) => each.id === kind);
+  if (!editor) return Promise.reject(new Error(st.editor.failed(EDITOR_PLACES[kind].name)));
+  // Open Space's own Electron may have set it: the editor, an Electron app too, would then run as plain Node
+  const { ELECTRON_RUN_AS_NODE: _, ...env } = process.env;
+  return new Promise((resolve, reject) => {
+    const child = spawn(editor.file, [...editor.args, folder], { detached: true, stdio: 'ignore', env });
+    child.once('error', () => reject(new Error(st.editor.failed(editor.name))));
+    child.once('spawn', () => { child.unref(); resolve(); });
   });
 }
 

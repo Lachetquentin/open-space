@@ -8,7 +8,7 @@ import { Normalizer, describeRequest, ruleText, type AgentLaunch, type ChromeSig
 
 function createNormalizer(peerName?: (address: string) => string, agentLaunch?: (agentId: string) => AgentLaunch | null) {
   const files: { who: string; caption: string; files: readonly { path: string; size: number; image: boolean }[]; display: string }[] = [];
-  const seen = { files, events: [] as OfficeEvent[], results: [] as TurnResult[], quotas: [] as Quota[], inits: [] as InitInfo[], commands: [] as SlashCommand[][], requests: [] as ToolRequest[], cancels: [] as string[], partials: [] as string[], order: [] as string[], background: [] as BackgroundTask[][], schedules: [] as ScheduleChange[], chrome: [] as ChromeSight[], suggestions: [] as string[], limits: [] as LimitHit[] };
+  const seen = { files, events: [] as OfficeEvent[], results: [] as TurnResult[], quotas: [] as Quota[], inits: [] as InitInfo[], commands: [] as SlashCommand[][], requests: [] as ToolRequest[], cancels: [] as string[], partials: [] as string[], order: [] as string[], background: [] as BackgroundTask[][], schedules: [] as ScheduleChange[], chrome: [] as ChromeSight[], suggestions: [] as string[], limits: [] as LimitHit[], agentTasks: [] as [string, string][] };
   const normalizer = new Normalizer({
     emit: (event) => { seen.events.push(event); seen.order.push(event.k); },
     onInit: (info) => seen.inits.push(info), onCommands: (commands) => seen.commands.push(commands),
@@ -16,7 +16,7 @@ function createNormalizer(peerName?: (address: string) => string, agentLaunch?: 
     onRequest: (request) => { seen.requests.push(request); seen.order.push('request'); }, onCancel: (requestId) => seen.cancels.push(requestId), onPartial: (who, text) => seen.partials.push(`${who}:${text}`),
     onBackground: (tasks) => seen.background.push(tasks), onSchedule: (change) => seen.schedules.push(change), onChrome: (sight) => seen.chrome.push(sight),
     onSuggestion: (suggestion) => { seen.suggestions.push(suggestion); seen.order.push('suggestion'); },
-    onLimitHit: (hit) => seen.limits.push(hit),
+    onLimitHit: (hit) => seen.limits.push(hit), onAgentTask: (who, taskId) => seen.agentTasks.push([who, taskId]),
     names: new Set(), peerName, agentLaunch, onFiles: (who, caption, sent, display) => files.push({ who, caption, files: sent, display }),
   });
   return { normalizer, ...seen };
@@ -396,6 +396,10 @@ describe('Normalizer on a real sub-agent with its text forwarded', () => {
     const reports = events.filter((event) => event.k === 'report');
     assert.equal(reports.length, 1);
     assert.match(reports[0].k === 'report' ? reports[0].text : '', /^I will list the folder now\.\n\nRan `ls \| wc -l`/);
+  });
+
+  it('tells the task Claude Code gave it, to stop it while it works', () => {
+    assert.deepEqual(replay('subagent-forwarded').agentTasks, [[agentId, 'a278f3812cad2ddcb']]);
   });
 
   it('leaves once, without a stray action for the handback nor for the Task result', () => {

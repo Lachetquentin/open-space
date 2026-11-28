@@ -15,6 +15,7 @@ import { parseLook } from '../shared/look.ts';
 import { storedTags } from '../shared/tags.ts';
 import { isModId, isModStoreName, MAX_MOD_DESCRIPTION, MAX_MOD_ENV, MAX_MOD_NAME, MAX_MOD_REQUEST, MAX_MOD_STORE, MOD_ICONS, MOD_REFRESH, type ModSettings } from '../shared/mods.ts';
 import { MUSIC_APPS, type MusicAction, type MusicApp } from '../shared/music.ts';
+import { EDITORS, type EditorKind } from '../shared/terminal.ts';
 import type { BrowserAction, BrowserInput, MouseButton } from '../shared/browser.ts';
 import { DEFAULT_PREFERENCES, parsePreferences } from './settings.ts';
 import { CONVERSATION_ID } from './conversations.ts';
@@ -343,6 +344,8 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     }
     case 'remoteControl': return sessionId && typeof raw.enabled === 'boolean' ? { t: 'remoteControl', sessionId, enabled: raw.enabled } : null;
     case 'openTerminal': return raw.sessionId === undefined ? { t: 'openTerminal' } : sessionId ? { t: 'openTerminal', sessionId } : null;
+    // never a folder from the client: the server opens the session's own
+    case 'openIn': return sessionId && (raw.target === 'folder' || EDITORS.includes(raw.target as EditorKind)) ? { t: 'openIn', sessionId, target: raw.target as 'folder' | EditorKind } : null;
     case 'shell': {
       const command = boundedString(raw.command, 10_000)?.trim();
       return sessionId && command ? { t: 'shell', sessionId, command } : null;

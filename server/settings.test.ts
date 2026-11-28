@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { SESSION_EXTRAS, showsExtra } from '../shared/protocol.ts';
 import { DEFAULT_PREFERENCES, Settings, parsePreferences } from './settings.ts';
 
 const folder = mkdtempSync(path.join(os.tmpdir(), 'office-settings-'));
@@ -57,6 +58,18 @@ describe('settings', () => {
     await settings.load();
     assert.equal(settings.preferences.isolate, 'busy');
     assert.equal(DEFAULT_PREFERENCES.isolate, 'busy');
+  });
+
+  it('keeps the known extras of the session window, and shows none from a file older than them', async () => {
+    const parsed = parsePreferences({ sessionExtras: { fullPath: true, agentStop: false, openIn: 'yes', cpu: true } });
+    assert.deepEqual(parsed.sessionExtras, { fullPath: true, agentStop: false }, 'an unknown extra or a value that is not true or false is left out');
+    assert.equal(parsePreferences({ sessionExtras: ['fullPath'] }).sessionExtras, undefined);
+    const file = path.join(folder, 'before-extras.json');
+    writeFileSync(file, JSON.stringify({ onboarded: true, model: 'opus' }));
+    const settings = new Settings(file);
+    await settings.load();
+    assert.deepEqual(SESSION_EXTRAS.filter((extra) => showsExtra(settings.preferences, extra)), []);
+    assert.equal(settings.preferences.model, 'opus');
   });
 
   it('needs the first start until it is done, and keeps the notifications of an older file', async () => {

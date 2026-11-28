@@ -6,7 +6,7 @@ import { backgroundLabel, backgroundWork, contextLevel, pauseLabel, stateLabel, 
 import { asideQuestion, commandSuggestions, findCommands, ownCommand, withOwnCommands, hintValues, nativeView, tuning, commandAt, typedName } from './commands.ts';
 import { diffRows } from './diff.ts';
 import { addTo, fitColumns, FOCUS_TILING, isFull, maxColumns, nextFocus, placement, removeFrom, replaceIn, retile } from './stack.ts';
-import { answerFromEnd, buildFeed, conversationMarkdown, publishedPages, threadOf, toolSummary, currentTurn, turnPhase, turnWord, runningShells, type FeedItem } from './feed.ts';
+import { agentElapsed, answerFromEnd, buildFeed, conversationMarkdown, publishedPages, threadOf, toolSummary, currentTurn, turnPhase, turnWord, runningShells, type FeedItem } from './feed.ts';
 import { matchFolders } from './folders.ts';
 import { appendLive, CLIENT_LOG_LIMIT, mergeLog } from './log.ts';
 import { attentionKind, attentionQueue, newlyWaiting, otherSessions, tabTitle } from './queue.ts';
@@ -173,6 +173,16 @@ describe('buildFeed', () => {
     assert.ok(sub && sub.kind === 'subagent' && sub.status === 'done' && sub.report === 'found');
     const permission = feed.items.find((item) => item.kind === 'permission');
     assert.ok(permission && permission.kind === 'permission' && permission.status === 'denied');
+  });
+
+  it('times a sub-agent from its hire to its leave, and one still at work until now', () => {
+    const later = 1_000_000;
+    const done = feed.items.find((item) => item.kind === 'subagent');
+    assert.ok(done?.kind === 'subagent');
+    assert.equal(agentElapsed(done, later), 4000, 'hired at the 4th event, gone at the 8th: the clock stopped');
+    const working = buildFeed([logged(2, { k: 'hire', id: 't2', type: 'x', name: 'Ann', task: 'dig', prompt: '' })]).items[0];
+    assert.ok(working?.kind === 'subagent');
+    assert.equal(agentElapsed(working, 62_000), 60_000);
   });
 
   it('shows the conversation without the sub-agents\' work, each sub-agent in its own thread, and gathers tool calls in a row', () => {
