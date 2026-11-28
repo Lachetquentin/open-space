@@ -14,7 +14,7 @@ export function TrustDialog() {
   const { cwd, code } = request;
   const words = t.composer.trust;
   return (
-    <Modal title={words.title} onClose={() => answerTrust(null)} wide>
+    <Modal title={words.title} onClose={() => answerTrust(null)} wide movable="trust-frame">
       <div className="cp-trust">
         <p>
           <strong>{homeRelative(cwd)}</strong> {words.neverTrusted}

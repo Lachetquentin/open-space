@@ -62,10 +62,10 @@ function CrewEditor() {
   const shown = typeof page === 'string' ? undefined : page.person;
   const people = [...crew].sort((a, b) => Number(b.self === true) - Number(a.self === true));
   return (
-    <Modal title={words.title} onClose={close} look="panel">
+    <Modal title={words.title} onClose={close} look="panel" movable="crew-frame">
       <div className="cp-prefs cp-team">
         <aside className="cp-prefs__side">
-          <div className="cp-prefs__brand"><CrewIcon /><span>{words.title}</span></div>
+          <div className="cp-prefs__brand" data-carry><CrewIcon /><span>{words.title}</span></div>
           <button type="button" className="cp-button cp-team__add" aria-pressed={shown === null} aria-label={words.addPerson} onClick={() => open(null)}>
             <PlusIcon /><span className="cp-team__label">{words.addPerson}</span>
           </button>

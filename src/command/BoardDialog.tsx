@@ -272,10 +272,10 @@ function Board() {
   );
 
   return (
-    <Modal title={words.title} onClose={() => openBoard(false)} look="panel">
+    <Modal title={words.title} onClose={() => openBoard(false)} look="panel" movable="board-frame">
       <div className="cp-board">
         <aside className="cp-board__side">
-          <div className="cp-board__brand">
+          <div className="cp-board__brand" data-carry>
             <NotesIcon />
             <span>{words.title}</span>
             <button type="button" className="cp-icon-button" data-size="small" aria-label={words.add} title={words.add} onClick={() => setNaming('')}><PlusIcon /></button>
@@ -328,7 +328,7 @@ function Board() {
         </aside>
 
         <section className="cp-board__main">
-          <header className="cp-board__head">
+          <header className="cp-board__head" data-carry>
             <div className="cp-board__heading">
               {renaming !== null ? (
                 <form className="cp-board__rename" onSubmit={rename}>

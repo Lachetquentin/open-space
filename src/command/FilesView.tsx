@@ -178,7 +178,7 @@ function FileTree({ session, rows, listed, expanded, openPath, dirty, onOpened }
         })}
       </ul>
       {removing && (
-        <Modal title={words.removeQuestion(removing.name)} onClose={() => setRemoving(null)}>
+        <Modal title={words.removeQuestion(removing.name)} onClose={() => setRemoving(null)} movable="file-remove-frame">
           <p className="cp-muted">{removing.folder ? words.removeFolderText : words.removeText}</p>
           <div className="cp-form__actions">
             <button type="button" className="cp-button" onClick={() => setRemoving(null)}>{words.cancel}</button>

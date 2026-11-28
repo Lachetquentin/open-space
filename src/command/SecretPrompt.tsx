@@ -227,7 +227,7 @@ export function SecretsDialog({ session, name = '', onClose }: { session: Sessio
     </div>
   );
   return (
-    <Modal title={words.title(session.name)} onClose={onClose}>
+    <Modal title={words.title(session.name)} onClose={onClose} movable="secret-frame">
       <div className="cp-secrets">
         {given.length > 0 && held(given, words.given)}
         {inherited.length > 0 && held(inherited, words.inherited)}

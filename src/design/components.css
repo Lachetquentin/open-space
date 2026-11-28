@@ -2235,11 +2235,17 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 .cp-modal[data-look='panel'] { width: min(var(--prefs-width), calc(100vw - 2 * var(--gutter))); height: min(var(--prefs-height), calc(100dvh - 2 * var(--gutter))); max-height: none; overflow: hidden; }
 .cp-modal[data-look='panel'][open] { display: flex; }
 .cp-modal[data-look='panel'] .cp-modal__body { flex: 1; min-height: 0; display: flex; }
-/* the settings, carried by their head and resized by their edges (Modal's movable); on a narrow window they fill it */
+/* a dialog carried by its head and resized by its edges (Modal's movable: every dialog); on a narrow window it fills it */
 @media (min-width: 60.001rem) {
   .cp-modal[data-placed] { position: fixed; inset: auto; margin: 0; left: var(--x); top: var(--y); width: var(--w); height: var(--h); max-width: none; max-height: none; }
   .cp-modal[data-movable] [data-carry] { cursor: grab; touch-action: none; }
   .cp-modal[data-moving] { user-select: none; }
+  /* a plain dialog (the mods, a question) placed at a chosen height: its content scrolls inside it */
+  .cp-modal[data-placed]:is(:not([data-look]), [data-look='palette'])[open] { display: flex; }
+  .cp-modal[data-placed]:not([data-look]) .cp-modal__body { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; align-content: start; }
+  /* the search at a chosen height: its list fills it */
+  .cp-modal[data-placed][data-look='palette'] .cp-modal__body { flex: 1; min-width: 0; min-height: 0; display: flex; }
+  .cp-modal[data-placed][data-look='palette'] .cp-find { flex: 1; min-width: 0; height: auto; }
   .cp-modal[data-moving] [data-carry] { cursor: grabbing; }
   /* the handles sit just outside its edges, so the scrollbar at its right stays a scrollbar */
   .cp-modal[data-movable] { overflow: visible; }

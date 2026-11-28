@@ -254,7 +254,7 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
         {session.untrusted && <p className="cp-detail__meta cp-detail__untrusted" title={t.session.detail.untrustedTitle}>{t.session.detail.untrusted}</p>}
         {switchingOff && asksBeforeSwitchingOff(session) && <SwitchOffDialog session={session} onClose={() => setSwitchingOff(false)} />}
         {switchingOff && !asksBeforeSwitchingOff(session) && (
-          <Modal title={t.session.detail.switchOffQuestion(session.name)} onClose={() => setSwitchingOff(false)}>
+          <Modal title={t.session.detail.switchOffQuestion(session.name)} onClose={() => setSwitchingOff(false)} movable="switch-off-question-frame">
             <p className="cp-muted">{t.session.detail.switchOffText}</p>
             {backgroundWork(session).length > 0 && <p className="cp-muted">{t.session.detail.stopsWith(backgroundWork(session).join(', '))}</p>}
             {session.worktree?.borrowed && <p className="cp-muted">{t.branches.switchOff.desktop}</p>}
@@ -266,7 +266,7 @@ export const Detail = memo(function Detail({ sessionId, detached = false }: { se
         )}
         {secretsOpen && <SecretsDialog session={session} name={secretsOpen.name} onClose={() => openSecrets(null)} />}
         {restAsked && (
-          <Modal title={t.session.detail.restQuestion(session.name)} onClose={() => setRestAsked(false)}>
+          <Modal title={t.session.detail.restQuestion(session.name)} onClose={() => setRestAsked(false)} movable="rest-frame">
             <p className="cp-muted">{t.session.detail.stopsWith(backgroundWork(session).join(', '))}</p>
             <div className="cp-form__actions">
               <button type="button" className="cp-button" onClick={() => setRestAsked(false)}>{t.session.detail.cancel}</button>

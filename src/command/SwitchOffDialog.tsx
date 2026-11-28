@@ -26,7 +26,7 @@ export function SwitchOffDialog({ session, onClose }: { session: SessionInfo; on
   };
   const busy = backgroundWork(session);
   return (
-    <Modal title={words.title(session.name)} onClose={onClose}>
+    <Modal title={words.title(session.name)} onClose={onClose} movable="switch-off-frame">
       <p className="cp-muted">{words.branch} <BranchName name={worktree.branch} />{words.has(status?.ahead ?? 0, status?.dirty ?? 0)}</p>
       {busy.length > 0 && <p className="cp-muted">{t.session.detail.stopsWith(busy.join(', '))}</p>}
       {worktree.borrowed && <p className="cp-muted">{words.desktop}</p>}

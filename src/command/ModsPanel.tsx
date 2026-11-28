@@ -36,7 +36,7 @@ export function ModsDialog() {
   if (!open) return null;
   // one dialog for both, so going to a mod's settings and back slides inside it rather than closing and opening again
   return (
-    <Modal title={settingsOf ? t.mods.settingsView.title(settingsOf.name) : t.mods.heading} onClose={() => openModsPanel(false)} wide look={settingsOf ? 'sheet' : undefined}>
+    <Modal title={settingsOf ? t.mods.settingsView.title(settingsOf.name) : t.mods.heading} onClose={() => openModsPanel(false)} wide look={settingsOf ? 'sheet' : undefined} movable="mods-frame">
       {settingsOf ? <ModSettingsView key={settingsOf.id} mod={settingsOf} /> : <ModsContent />}
     </Modal>
   );
@@ -149,7 +149,7 @@ function ModSettingsView({ mod }: { mod: ModInfo }) {
   const Icon = MOD_ICONS[icon];
   return (
     <form className="cp-mod-settings" onSubmit={save}>
-      <header className="cp-mod-settings__head">
+      <header className="cp-mod-settings__head" data-carry>
         <button type="button" className="cp-icon-button" aria-label={words.back} title={words.back} onClick={back}><BackIcon /></button>
         <span className="cp-mods__icon" aria-hidden="true"><Icon /></span>
         <div className="cp-mod-settings__titles">

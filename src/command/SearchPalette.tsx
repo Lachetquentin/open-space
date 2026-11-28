@@ -254,9 +254,9 @@ function PaletteContent() {
 
   let index = 0;
   return (
-    <Modal title={words.title} onClose={close} look="palette">
+    <Modal title={words.title} onClose={close} look="palette" movable="search-frame">
       <div className="cp-find" onKeyDown={onKeyDown}>
-        <div className="cp-find__field">
+        <div className="cp-find__field" data-carry>
           <SearchIcon />
           <label className="cp-sr-only" htmlFor="palette-query">{words.field}</label>
           <input

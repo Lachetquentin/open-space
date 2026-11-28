@@ -37,7 +37,7 @@ export function AppUpdateAction() {
         </button>
         {/* out of the settings, whose panel styles would reach into it */}
         {warned && createPortal(
-          <Modal title={words.restartQuestion} onClose={() => setWarned(false)}>
+          <Modal title={words.restartQuestion} onClose={() => setWarned(false)} movable="restart-frame">
             <p className="cp-muted">{words.restartBusy(busy.length, names)}</p>
             <div className="cp-form__actions">
               <button type="button" className="cp-button" onClick={() => setWarned(false)}>{words.cancel}</button>

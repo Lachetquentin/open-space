@@ -64,9 +64,9 @@ function BranchesPanel({ cwd }: { cwd: string }) {
   };
 
   return (
-    <Modal title={words.title(repo)} onClose={close} look="sheet">
+    <Modal title={words.title(repo)} onClose={close} look="sheet" movable="branches-frame">
       <div className="cp-branches">
-        <header className="cp-branches__head">
+        <header className="cp-branches__head" data-carry>
           <h2>{words.title(repo)}</h2>
           <button type="button" className="cp-icon-button" aria-label={words.close} title={words.close} onClick={close}><CloseIcon /></button>
         </header>

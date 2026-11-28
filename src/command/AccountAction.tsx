@@ -32,7 +32,7 @@ export function AccountAction() {
       </button>
       {/* out of the settings, whose panel styles would reach into it */}
       {warned && createPortal(
-        <Modal title={words.logoutQuestion} onClose={() => setWarned(false)}>
+        <Modal title={words.logoutQuestion} onClose={() => setWarned(false)} movable="logout-frame">
           <p className="cp-muted">{words.logoutWarning}</p>
           <div className="cp-form__actions">
             <button type="button" className="cp-button" onClick={() => setWarned(false)}>{t.settings.prefs.update.cancel}</button>

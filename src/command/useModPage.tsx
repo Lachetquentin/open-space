@@ -207,7 +207,7 @@ export function useModPage(mod: ModInfo, paced: boolean) {
     />
   );
   const question = asked && createPortal(
-    <Modal title={words.runQuestion(asked.name)} onClose={() => setAsked(null)}>
+    <Modal title={words.runQuestion(asked.name)} onClose={() => setAsked(null)} movable="mod-run-frame">
       <p className="cp-muted">{words.runText(mod.name)}</p>
       <div className="cp-form__actions">
         <button type="button" className="cp-button" onClick={() => setAsked(null)}>{words.cancel}</button>

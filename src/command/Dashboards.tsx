@@ -108,7 +108,7 @@ export function Dashboards() {
       </>, bar)}
       <Grid key={shown?.id ?? 'none'} tiles={shown?.tiles ?? []} onChange={change} />
       {removing && shown && (
-        <Modal title={words.removeQuestion(shown.name)} onClose={() => setRemoving(false)}>
+        <Modal title={words.removeQuestion(shown.name)} onClose={() => setRemoving(false)} movable="dashboard-remove-frame">
           <p className="cp-muted">{words.removeText}</p>
           <div className="cp-form__actions">
             <button type="button" className="cp-button" onClick={() => setRemoving(false)}>{words.cancel}</button>

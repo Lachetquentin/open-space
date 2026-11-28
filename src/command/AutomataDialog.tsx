@@ -77,10 +77,10 @@ function Automata() {
   }, [state.triggers, shown]);
 
   return (
-    <Modal title={words.title} onClose={close} look="panel">
+    <Modal title={words.title} onClose={close} look="panel" movable="automata-frame">
       <div className="cp-prefs cp-team">
         <aside className="cp-prefs__side">
-          <div className="cp-prefs__brand"><AutomatonIcon /><span>{words.title}</span></div>
+          <div className="cp-prefs__brand" data-carry><AutomatonIcon /><span>{words.title}</span></div>
           <button type="button" className="cp-button cp-team__add" aria-pressed={shown === null} onClick={() => setPage({ trigger: null })}>
             <PlusIcon /><span className="cp-team__label">{words.triggers.add}</span>
           </button>
@@ -497,7 +497,7 @@ function RunDetail({ run }: { run: AutomatonRun }) {
 
   return (
     <section className="cp-automata__detail" aria-label={roleName(run)}>
-      <header className="cp-automata__head">
+      <header className="cp-automata__head" data-carry>
         <h3><AutomatonIcon />{roleName(run)}</h3>
         <span className="cp-automata__status" data-status={run.status}>{words.status[run.status]}</span>
         <span className="cp-muted">{running ? words.started(formatDuration(now - run.startedAt)) : run.endedAt ? words.lasted(formatDuration(run.endedAt - run.startedAt)) : ''}</span>

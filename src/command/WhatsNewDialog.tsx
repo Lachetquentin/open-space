@@ -72,9 +72,9 @@ function ReleaseNews({ release, onAction }: { release: Release; onAction: (actio
 function NewsDialog({ release, onClose }: { release: Release; onClose: () => void }) {
   const words = t.showcase.whatsNew;
   return (
-    <Modal title={words.title} onClose={onClose} look="showcase">
+    <Modal title={words.title} onClose={onClose} look="showcase" movable="news-frame">
       <div className="cp-news">
-        <header className="cp-news__head">
+        <header className="cp-news__head" data-carry>
           <p className="cp-news__kicker"><SparklesIcon />{words.kicker(__APP_VERSION__)}</p>
           <h2>{words.title}</h2>
           <p className="cp-muted">{words.intro}</p>
@@ -99,8 +99,8 @@ function TourDialog({ onClose }: { onClose: () => void }) {
   const last = index === SLIDES.length - 1;
   const look = useSessions((s) => s.crew.find((member) => member.self)?.look ?? undefined);
   return (
-    <Modal title={words.label} onClose={onClose} look="showcase">
-      <div className="cp-news" data-tour="true">
+    <Modal title={words.label} onClose={onClose} look="showcase" movable="tour-frame">
+      <div className="cp-news" data-tour="true" data-carry>
         <button type="button" className="cp-icon-button cp-news__close" aria-label={t.settings.close} title={t.settings.close} onClick={onClose}><CloseIcon /></button>
         <Tour index={index} onIndex={setIndex} look={look} inDialog />
         <footer className="cp-news__foot">

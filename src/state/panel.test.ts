@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { PANEL_MARGIN, PANEL_MIN, placePanel, resizePanel } from './panel.ts';
+import { DIALOG_MIN, PANEL_MARGIN, PANEL_MIN, placePanel, resizePanel } from './panel.ts';
 
 const screen = { width: 1600, height: 1000 };
 const box = { left: 300, top: 200, width: 900, height: 600 };
@@ -22,6 +22,12 @@ describe('a dialog placed by hand', () => {
 
   it('stops at its smallest size without moving the side that stays', () => {
     assert.deepEqual(resizePanel(box, 'w', 800, 0, screen), { left: 1200 - PANEL_MIN.width, top: 200, width: PANEL_MIN.width, height: 600 });
+  });
+
+  it('lets a small dialog stay small, down to its own smallest size', () => {
+    const question = { left: 500, top: 300, width: 544, height: 180 };
+    assert.deepEqual(placePanel(question, screen, DIALOG_MIN), question);
+    assert.deepEqual(resizePanel(question, 'se', -400, -100, screen, DIALOG_MIN), { ...question, width: DIALOG_MIN.width, height: DIALOG_MIN.height });
   });
 
   it('stops at the edge of the window', () => {

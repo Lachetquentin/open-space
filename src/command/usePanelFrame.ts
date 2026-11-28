@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { startsDrag } from '../lib/drag.ts';
 import { readPreference, writePreference } from '../lib/preferences.ts';
-import { placePanel, resizePanel } from '../state/panel.ts';
+import { placePanel, resizePanel, type Size } from '../state/panel.ts';
 import type { Box } from '../state/room-frame.ts';
 import type { Edge } from '../state/windows.ts';
 import { INTERACTIVE } from './useWindowDrag.ts';
@@ -11,25 +11,27 @@ import { INTERACTIVE } from './useWindowDrag.ts';
 const screen = () => ({ width: window.innerWidth, height: window.innerHeight });
 /** a narrow window shows the dialog over all of it (components.css, max-width: 60rem): it does not move there */
 const narrow = () => window.matchMedia('(max-width: 60rem)').matches;
-/** `key`: the preference it is kept under, or null for a dialog that does not move. */
-export function usePanelFrame(key: string | null, dialog: RefObject<HTMLDialogElement | null>) {
+/** `key`: the preference it is kept under, or null for a dialog that does not move; `min`: its smallest size. */
+export function usePanelFrame(key: string | null, dialog: RefObject<HTMLDialogElement | null>, min: Size) {
   // the box the user chose, kept as is: a window made smaller then larger again gives it back
   const chosen = useRef<Box | null>(key ? readPreference<Box | null>(key, null) : null);
-  const [box, setBox] = useState<Box | null>(() => chosen.current && placePanel(chosen.current, screen()));
+  const [box, setBox] = useState<Box | null>(() => chosen.current && placePanel(chosen.current, screen(), min));
   const [moving, setMoving] = useState(false);
   const pulled = useRef<{ start: Box; x: number; y: number; edge: Edge | null; started: boolean } | null>(null);
 
   // another size of window: it stays whole within it
   useEffect(() => {
     if (!key) return;
-    const keep = () => setBox(chosen.current && placePanel(chosen.current, screen()));
+    const keep = () => setBox(chosen.current && placePanel(chosen.current, screen(), min));
     window.addEventListener('resize', keep);
     return () => window.removeEventListener('resize', keep);
-  }, [key]);
+  }, [key, min]);
 
   const grab = (edge: Edge | null, event: ReactPointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (!key || !dialog.current || event.button !== 0 || narrow()) return;
+    // a dialog opened from within this one: its presses reach this one too through React, they are its own
+    if (target.closest('dialog') !== dialog.current) return;
     if (!edge && (!target.closest('[data-carry]') || target.closest(INTERACTIVE))) return;
     const { left, top, width, height } = dialog.current.getBoundingClientRect();
     pulled.current = { start: box ?? { left, top, width, height }, x: event.clientX, y: event.clientY, edge, started: false };
@@ -47,7 +49,7 @@ export function usePanelFrame(key: string | null, dialog: RefObject<HTMLDialogEl
       setMoving(true);
     }
     const dx = event.clientX - from.x, dy = event.clientY - from.y;
-    chosen.current = from.edge ? resizePanel(from.start, from.edge, dx, dy, screen()) : placePanel({ ...from.start, left: from.start.left + dx, top: from.start.top + dy }, screen());
+    chosen.current = from.edge ? resizePanel(from.start, from.edge, dx, dy, screen(), min) : placePanel({ ...from.start, left: from.start.left + dx, top: from.start.top + dy }, screen(), min);
     setBox(chosen.current);
   };
   const drop = () => {
