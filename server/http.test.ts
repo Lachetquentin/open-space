@@ -25,17 +25,21 @@ const HOOK_TOKEN = 't'.repeat(43);
 const hooked: string[] = [];
 let externalKey: string | null = null;
 
-/** A raw POST, with the Host and headers given (a tunnel passes its own public name as Host). */
-function rawPost(target: string, body: string, headers: Record<string, string> = {}, host = `127.0.0.1:${port}`, to = port): Promise<{ status: number; body: string }> {
+/**
+ * A raw POST, with the Host and headers given (a tunnel passes its own public name as Host). A number as `body` only
+ * declares that Content-Length and sends nothing: a server that refuses it and closes with the body unread resets the
+ * socket, and on Windows the reset drops its answer before we read it.
+ */
+function rawPost(target: string, body: string | number, headers: Record<string, string> = {}, host = `127.0.0.1:${port}`, to = port): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const socket = net.connect(to, '127.0.0.1');
     let data = '';
     socket.on('data', (chunk) => { data += chunk; });
     socket.on('close', () => resolve({ status: Number(data.slice(9, 12)), body: data.split('\r\n\r\n')[1] ?? '' }));
-    // a body refused (413) before it was all sent: the server closes while we still write, the reset comes after its answer
-    socket.on('error', (error) => { if (!data) reject(error); });
+    socket.on('error', reject);
     const extra = Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`).join('');
-    socket.write(`POST ${target} HTTP/1.1\r\nHost: ${host}\r\nContent-Length: ${Buffer.byteLength(body)}\r\n${extra}Connection: close\r\n\r\n${body}`);
+    const [length, sent] = typeof body === 'number' ? [body, ''] : [Buffer.byteLength(body), body];
+    socket.write(`POST ${target} HTTP/1.1\r\nHost: ${host}\r\nContent-Length: ${length}\r\n${extra}Connection: close\r\n\r\n${sent}`);
   });
 }
 
@@ -462,7 +466,7 @@ describe('the triggers\' webhooks and the open-space MCP server', () => {
     assert.equal((await rawPost(`/hooks/${HOOK_ID}/${'u'.repeat(43)}`, '{}', {}, 'tunnel.example.com')).status, 404);
     assert.equal((await rawPost(`/hooks/${HOOK_ID}/${HOOK_TOKEN}`, '{}', { Origin: 'https://evil.example' })).status, 404, 'never from a page');
     assert.equal((await rawRequest(`/hooks/${HOOK_ID}/${HOOK_TOKEN}`)).status, 404, 'POST only');
-    assert.equal((await rawPost(`/hooks/${HOOK_ID}/${HOOK_TOKEN}`, 'x'.repeat(70_000))).status, 413);
+    assert.equal((await rawPost(`/hooks/${HOOK_ID}/${HOOK_TOKEN}`, 70_000)).status, 413, 'refused on its declared length');
     assert.equal(hooked.length, 1);
     // everything else still needs our Host
     assert.equal((await rawRequest('/', 'tunnel.example.com')).status, 403);
