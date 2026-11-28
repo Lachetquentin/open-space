@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { SessionInfo } from '../../shared/protocol.ts';
-import { activeProject, allProjects, inProject, nextRow, outsideRoots, projectDigit, projectOf, projectsOf, withoutProjects, withPin } from './projects.ts';
+import { activeProject, allProjects, inProject, insideRoots, nextRow, outsideRoots, projectDigit, projectOf, projectsOf, withoutProjects, withPin } from './projects.ts';
 
 const session = (id: string, cwd: string, extra: Partial<SessionInfo> = {}) => ({ id, cwd, state: 'wait', turns: 0, permissions: [], subagents: [], createdAt: 0, ...extra }) as unknown as SessionInfo;
 
@@ -73,6 +73,14 @@ describe('projects', () => {
     assert.equal(outsideRoots({ folder: '/old/app', name: 'app', count: 1, waiting: false, saved: true, pinned: false }, ['/code']), true);
     assert.equal(outsideRoots({ folder: '/code/site', name: 'site', count: 0, waiting: false, saved: true, pinned: false }, ['/code']), false);
     assert.equal(outsideRoots({ folder: '/elsewhere/blog', name: 'blog', count: 1, waiting: false, saved: false, pinned: false }, ['/code']), false);
+  });
+
+  it('reads a folder the picker shows from the home ("~/…") against the roots, as typed or under their real paths', () => {
+    assert.equal(insideRoots('~/code/app', ['/Users/ada/code']), true);
+    assert.equal(insideRoots('~/other/app', ['/Users/ada/code']), false);
+    // a saved project is kept under its real path: a symlinked root as typed does not hold it
+    assert.equal(insideRoots('/srv/real/app', ['/Users/ada/code'], ['/srv/real']), true);
+    assert.equal(insideRoots('/srv/real/app', ['/Users/ada/code']), false);
   });
 
   it('moves the arrow keys over the rows that can be picked, wrapping, and stays when none can', () => {

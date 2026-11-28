@@ -1745,7 +1745,7 @@ button.cp-tag:hover { border-color: var(--color-accent); }
 .cp-launcher[data-style='streamlined'] .cp-launcher__attach { margin-right: auto; }
 .cp-launcher[data-style='streamlined'] .cp-launcher__send { margin-left: 0; width: 2rem; padding: 0; justify-content: center; }
 .cp-launcher[data-style='streamlined'] .cp-launcher__options :is(.cp-tune__panel, .cp-person__panel) { left: auto; right: 0; }
-/* under the frame, one row of ghost chips: where it works, its folder and the resume toggle on the left, what it starts from and its permissions
+/* under the frame, one row of ghost chips: where it works, its folder and the resume toggle on the left, what it starts from
    at the right end; it wraps only when too narrow, the right group then stays right-aligned on its own line */
 .cp-launcher__chips, .cp-launcher__chips-start { display: flex; align-items: center; gap: var(--space-1) var(--space-2); }
 .cp-launcher__chips { flex-wrap: wrap; }

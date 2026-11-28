@@ -27,7 +27,7 @@ import { createWebServer } from './http.ts';
 import { parseClientMessage } from './messages.ts';
 import { allowPhone, forgetPhone, loopbackPolicy, readOrCreateSecret } from './security.ts';
 import { findTailscale, readTailscaleName, serveBridge, serveMods, stopServing } from './tailscale.ts';
-import { listProjectDirectories, resolveAllowedDirectory, resolveInside, suggestRoots } from './paths.ts';
+import { listProjectDirectories, realRootsOf, resolveAllowedDirectory, resolveInside, suggestRoots } from './paths.ts';
 import { changeFiles, fileAt, listFolder, readSessionFile, revealFile, writeSessionFile } from './files.ts';
 import { pathFinder } from './file-mentions.ts';
 import { windowsKnownFolders } from './system-folders.ts';
@@ -496,7 +496,7 @@ setInterval(() => { checkClaudeVersion().catch((error: unknown) => log('cannot r
 
 /** Claude Code's own settings, read again whenever a page connects (the user may have changed them in its /config) */
 let claudeDefaults = await readClaudeDefaults(os.homedir());
-const preferencesMessage = (): ServerMessage => ({ t: 'preferences', preferences: settings.preferences, roots: config.roots, onboarded: settings.onboarded, claudeDefaults });
+const preferencesMessage = (): ServerMessage => ({ t: 'preferences', preferences: settings.preferences, roots: config.roots, realRoots: realRootsOf(config.roots), onboarded: settings.onboarded, claudeDefaults });
 prepareSounds(config.dataDir, log);
 /** the kit the mods load, and the guide their sessions read: beside the page once built, in public/ while developing */
 const MOD_KIT = path.join(DEV ? path.join(ROOT, 'public') : DIST, 'mod-kit');
@@ -564,7 +564,7 @@ function onConnection(socket: WebSocket) {
   socket.on('error', (error) => log('websocket error', error));
 
   send({
-    t: 'hello', claude: claudeInfo(), roots: config.roots,
+    t: 'hello', claude: claudeInfo(), roots: config.roots, realRoots: realRootsOf(config.roots),
     sessions: sessions.list(), commands: sessions.getCommands(), folderCommands: sessions.getFolderCommands(), models: sessions.getModels(), quota: sessions.getQuota(), build: BUILD, crew: crew.list(),
     preferences: settings.preferences, onboarded: settings.onboarded, rootsLocked: config.rootsLocked, claudeDefaults, appUpdate,
     browsers: browsers.states(), browserAvailable: browsers.available, mods: mods.list(),

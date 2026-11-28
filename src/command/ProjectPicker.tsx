@@ -1,9 +1,8 @@
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { isFullPath } from '../../shared/paths.ts';
-import { isInside } from '../../shared/worktrees.ts';
 import { t } from '../i18n/index.ts';
 import { homeRelative } from '../lib/format.ts';
-import { findProjects, nextRow, outsideRoots, withPin, withProject } from '../state/projects.ts';
+import { findProjects, insideRoots, nextRow, outsideRoots, withPin, withProject } from '../state/projects.ts';
 import { useSessions } from '../state/sessions.ts';
 import { useProjects } from '../state/useProjects.ts';
 import { FolderPicker } from './FolderPicker.tsx';
@@ -20,6 +19,7 @@ export function ProjectPicker({ cwd, name, before, after, onPick }: { cwd: strin
   const saved = useSessions((s) => s.preferences.projects);
   const directories = useSessions((s) => s.directories);
   const roots = useSessions((s) => s.roots);
+  const realRoots = useSessions((s) => s.realRoots);
   const setPreferences = useSessions((s) => s.setPreferences);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -35,7 +35,7 @@ export function ProjectPicker({ cwd, name, before, after, onPick }: { cwd: strin
   const shown = findProjects(known, query);
   const current = homeRelative(cwd);
   // a saved project whose folder left the allowed ones is shown, to unpin or remove, but not picked
-  const unreachable = shown.map((project) => outsideRoots(project, roots));
+  const unreachable = shown.map((project) => outsideRoots(project, roots, realRoots));
   useEffect(() => { if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [open, active, listId]);
 
   const pick = (folder: string) => { onPick(homeRelative(folder)); close(); };
@@ -54,7 +54,7 @@ export function ProjectPicker({ cwd, name, before, after, onPick }: { cwd: strin
     const folder = adding?.trim() ?? '';
     if (!isFullPath(folder)) return;
     // the server keeps it only inside the roots, under its real path: outside them it would be dropped without a word
-    if (!roots.some((root) => isInside(folder, root))) { setOutside(true); return; }
+    if (!insideRoots(folder, roots, realRoots)) { setOutside(true); return; }
     setPreferences({ projects: withProject(saved ?? [], folder) });
     pick(folder);
   };
@@ -63,7 +63,7 @@ export function ProjectPicker({ cwd, name, before, after, onPick }: { cwd: strin
     <div className="cp-project-picker" ref={box}>
       <h2>
         {before}
-        <button type="button" className="cp-project-picker__trigger" aria-haspopup="dialog" aria-expanded={open} title={words.change} onClick={() => { if (open) close(); else { setActive(nextRow(known.map((project) => outsideRoots(project, roots)), -1, 1)); setOpen(true); } }}>
+        <button type="button" className="cp-project-picker__trigger" aria-haspopup="dialog" aria-expanded={open} title={words.change} onClick={() => { if (open) close(); else { setActive(nextRow(known.map((project) => outsideRoots(project, roots, realRoots)), -1, 1)); setOpen(true); } }}>
           <strong>{name}</strong><ChevronDownIcon />
         </button>
         {after}
@@ -73,7 +73,7 @@ export function ProjectPicker({ cwd, name, before, after, onPick }: { cwd: strin
           <input
             className="cp-project-picker__search" type="search" value={query} placeholder={words.search} aria-label={words.search} autoComplete="off" spellCheck={false} autoFocus
             role="combobox" aria-expanded aria-controls={listId} aria-autocomplete="list" aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
-            onChange={(e) => { setQuery(e.target.value); setActive(nextRow(findProjects(known, e.target.value).map((project) => outsideRoots(project, roots)), -1, 1)); }} onKeyDown={onKeyDown}
+            onChange={(e) => { setQuery(e.target.value); setActive(nextRow(findProjects(known, e.target.value).map((project) => outsideRoots(project, roots, realRoots)), -1, 1)); }} onKeyDown={onKeyDown}
           />
           <ul className="cp-project-picker__list" id={listId} role="listbox" aria-label={words.title}>
             {shown.map((project, index) => (

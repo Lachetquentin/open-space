@@ -1,4 +1,4 @@
-import { folderName } from '../lib/format.ts';
+import { folderName, homeRelative } from '../lib/format.ts';
 import { roomSessions } from '../room/cast.ts';
 import { attentionKind, type SeenSequences } from './queue.ts';
 import { matchesAll } from '../../shared/search.ts';
@@ -84,9 +84,17 @@ export function nextRow(disabled: readonly boolean[], from: number, step: 1 | -1
 }
 
 /** Whether a saved project's folder is no longer inside the allowed folders (Settings › Folders): it cannot start a session until it is again. */
-export const outsideRoots = (project: Project, roots: readonly string[]) => project.saved && !insideRoots(project.folder, roots);
+export const outsideRoots = (project: Project, roots: readonly string[], realRoots: readonly string[] = []) => project.saved && !insideRoots(project.folder, roots, realRoots);
 
-export const insideRoots = (folder: string, roots: readonly string[]) => roots.some((root) => isInside(folder, root));
+/**
+ * Whether a folder is inside the allowed folders: as the page has them (`roots`, as typed) or under their real paths
+ * (`realRoots`, where the server keeps the saved projects). Both sides are compared as the page shows them: the folder
+ * picker gives "~/code/app", which the server reads as the home, not "/Users/me/code/app".
+ */
+export const insideRoots = (folder: string, roots: readonly string[], realRoots: readonly string[] = []) => {
+  const shown = homeRelative(folder);
+  return [...roots, ...realRoots].some((root) => isInside(shown, homeRelative(root)));
+};
 
 /**
  * The preferences without the saved projects. The settings dialog saves its draft whole, and projects also change from the

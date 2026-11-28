@@ -101,7 +101,6 @@ export const composer = {
     newWorktree: 'Nouveau worktree',
     /** a branch Open Space kept, or a worktree no session works in, to go on with (FolderRepo.reusable) */
     previousWorktree: 'Worktree existant',
-    previousWorktreeTitle: 'Reprendre une branche gardée, ou un worktree où aucune session ne travaille',
     reusedBranch: 'Branche à reprendre',
     fromBranch: 'Depuis',
     resumeConversation: 'Reprendre une conversation',

@@ -79,11 +79,13 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
   // the folder's repository, asked for once the user stops typing it: whether to offer a branch of its own
   const repo = useSessions((s) => s.folderRepos[cwd]);
   const openBranches = useSessions((s) => s.openBranches);
+  // and again when a session comes or goes: a branch another one took is no longer on offer
+  const sessionCount = Object.keys(sessions).length;
   useEffect(() => {
     if (!cwd || !live) return;
     const timer = window.setTimeout(() => send({ t: 'folderInfo', cwd }), 250);
     return () => window.clearTimeout(timer);
-  }, [cwd, live, send]);
+  }, [cwd, live, send, sessionCount]);
   const taken = useMemo(() => (repo ? occupants(Object.values(sessions), repo) : []), [repo, sessions]);
   const offer = isolationOffer(preferences.isolate, repo, taken.length);
   // the user's own choice for this folder (the line's switch or the panel's Shared / Isolated), else the setting's
@@ -149,6 +151,8 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
     attachments.clear();
     setResumeId(null);
     setAsked(null);
+    // the branch it took is no longer free: the choice is forgotten (the folder is asked again once the session shows up)
+    setReuse(null);
   };
 
   const words = t.composer.launcher;
@@ -222,7 +226,7 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
                 {reused ? (
                   <ChipSelect
                     icon={<KeepIcon />} label={words.reusedBranch} shown={reused} value={reused}
-                    options={reusable.map((one) => ({ value: one.branch, label: reusableLabel(one) }))} onChange={(branch) => setReuse({ cwd, branch })}
+                    options={reusableOptions(reusable)} onChange={(branch) => setReuse({ cwd, branch })}
                   />
                 ) : repo && isolated && (
                   <ChipSelect
@@ -278,7 +282,7 @@ export function Launcher({ onClose, replacing }: { onClose?: () => void; replaci
                   <> {branchWords.reuses(person)}{' '}
                     <span className="cp-chip" data-select>
                       <select aria-label={words.reusedBranch} value={reused} onChange={(e) => setReuse({ cwd, branch: e.target.value })}>
-                        {reusable.map((one) => <option key={one.branch} value={one.branch}>{reusableLabel(one)}</option>)}
+                        {reusableOptions(reusable).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </span>
                     . <button type="button" className="cp-link" onClick={() => setReuse(null)}>{branchWords.reuseOff}</button>
@@ -364,8 +368,8 @@ function ResumeList({ conversations, cwd, wanted, query, onQuery, chosen, onPick
 /** Where a session of the streamlined launcher works: the folder itself, a worktree on a new branch, or a branch to go on with. */
 type Workspace = 'checkout' | 'new' | 'existing';
 
-/** A branch to go on with, in the chip's list: its name, and how long ago it last moved. */
-const reusableLabel = (one: ReusableBranch) => (one.at ? `${one.branch} · ${formatAgo(Date.now() - one.at)}` : one.branch);
+/** The kept branches a session can go on with, as the two dropdowns list them: the branch, and when it was last worked on. */
+const reusableOptions = (branches: readonly ReusableBranch[]) => branches.map((one) => ({ value: one.branch, label: one.at ? `${one.branch} · ${formatAgo(Date.now() - one.at)}` : one.branch }));
 
 /** The streamlined launcher's choice of workspace; "Previous worktree" only when the folder has a branch to go on with. */
 function WorkspaceMenu({ workspace, reusable, disabled, onChange }: { workspace: Workspace; reusable: boolean; disabled: boolean; onChange: (workspace: Workspace) => void }) {
@@ -377,7 +381,7 @@ function WorkspaceMenu({ workspace, reusable, disabled, onChange }: { workspace:
   const choices: { value: Workspace; icon: ReactNode; label: string; title: string }[] = [
     { value: 'checkout', icon: <FolderIcon />, label: words.currentCheckout, title: t.branches.tune.sharedTitle },
     { value: 'new', icon: <BranchIcon />, label: words.newWorktree, title: t.branches.tune.isolatedTitle },
-    ...(reusable ? [{ value: 'existing' as const, icon: <KeepIcon />, label: words.previousWorktree, title: words.previousWorktreeTitle }] : []),
+    ...(reusable ? [{ value: 'existing' as const, icon: <KeepIcon />, label: words.previousWorktree, title: t.branches.launcher.reuseTitle }] : []),
   ];
   const shown = choices.find((choice) => choice.value === workspace) ?? choices[0];
   return (

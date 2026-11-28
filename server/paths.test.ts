@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { isWithin, listProjectDirectories, resolveAllowedDirectory, resolveInside } from './paths.ts';
+import { isWithin, listProjectDirectories, realRootsOf, resolveAllowedDirectory, resolveInside } from './paths.ts';
 
 let base: string;
 let root: string;
@@ -97,6 +97,14 @@ describe('resolveAllowedDirectory', () => {
 
   it('ignores roots that do not exist', () => {
     assert.equal(resolveAllowedDirectory(path.join(root, 'project'), [path.join(base, 'ghost'), root]), path.join(root, 'project'));
+  });
+});
+
+describe('realRootsOf', () => {
+  it('gives a symlinked root under its real path, where saved projects are kept, and drops a missing one', () => {
+    const linked = path.join(base, 'linked-root');
+    symlinkSync(root, linked);
+    assert.deepEqual(realRootsOf([linked, path.join(base, 'ghost')]), [root]);
   });
 });
 

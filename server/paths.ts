@@ -12,6 +12,15 @@ export function isWithin(parent: string, child: string): boolean {
   return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
+/** The roots under their real paths (symlinks resolved), the way saved projects are kept; a root that cannot be resolved is left out. */
+export function realRootsOf(roots: readonly string[]): string[] {
+  const real: string[] = [];
+  for (const root of roots) {
+    try { real.push(realpathSync(root)); } catch { /* a root that is gone has no real path */ }
+  }
+  return real;
+}
+
 /** Resolves `candidate` against `root`, following symlinks. Returns the real path, or null if it does not exist or leaves `root`. */
 export function resolveInside(root: string, candidate: string): string | null {
   try {

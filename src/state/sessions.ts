@@ -95,6 +95,8 @@ export interface CommandPostState {
   connection: Connection;
   claude: ClaudeInfo | null;
   roots: string[];
+  /** the roots under their real paths (symlinks resolved), where saved projects are kept: with `roots`, what tells a project is inside them */
+  realRoots: string[];
   /** the people sessions are named after, with their look; one of them is the user (`self`) */
   crew: CrewMember[];
   crewOpen: boolean;
@@ -454,6 +456,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
   connection: 'connecting',
   claude: null,
   roots: [],
+  realRoots: [],
   crew: [],
   crewOpen: false,
   showcase: null,
@@ -567,7 +570,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
         if (!message.preferences.language) s.send({ t: 'preferences', preferences: { language: languageOf(navigator.languages) } });
         set({
           ...languageState(message.preferences),
-          claude: message.claude, roots: message.roots, crew: message.crew, sessions, commands: message.commands, // a server started before these existed does not send them
+          claude: message.claude, roots: message.roots, realRoots: message.realRoots ?? message.roots, crew: message.crew, sessions, commands: message.commands, // a server started before these existed does not send them
           folderCommands: message.folderCommands ?? {}, models: message.models ?? [], quota: message.quota,
           preferences: message.preferences, onboarded: message.onboarded, rootsLocked: message.rootsLocked, claudeDefaults: message.claudeDefaults, appUpdate: message.appUpdate,
           browsers: message.browsers ?? {}, browserAvailable: message.browserAvailable ?? false, mods: message.mods ?? null,
@@ -618,7 +621,7 @@ export const useSessions = create<CommandPostState>((set, get) => ({
         if (s.sound && previous[message.session.id] && previous[message.session.id].state !== 'error' && message.session.state === 'error') errorChime();
         break;
       }
-      case 'preferences': set({ ...languageState(message.preferences), preferences: message.preferences, roots: message.roots, onboarded: message.onboarded, claudeDefaults: message.claudeDefaults }); break;
+      case 'preferences': set({ ...languageState(message.preferences), preferences: message.preferences, roots: message.roots, realRoots: message.realRoots ?? message.roots, onboarded: message.onboarded, claudeDefaults: message.claudeDefaults }); break;
       case 'rootSuggestions': set({ rootSuggestions: message.suggestions }); break;
       case 'terminals': set({ terminals: message.choices }); break;
       case 'trustNeeded': if (lastCreate) set({ trustRequest: { cwd: message.cwd, code: message.code, options: lastCreate } }); break;

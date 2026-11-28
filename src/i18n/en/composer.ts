@@ -97,7 +97,6 @@ export const composer: Dictionary['composer'] = {
     currentCheckout: 'Current checkout',
     newWorktree: 'New worktree',
     previousWorktree: 'Previous worktree',
-    previousWorktreeTitle: 'Go on with a kept branch, or a worktree no session works in',
     reusedBranch: 'Branch to go on with',
     fromBranch: 'From',
     resumeConversation: 'Resume a conversation',

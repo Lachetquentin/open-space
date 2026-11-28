@@ -861,11 +861,11 @@ export type ClientMessage =
   | { t: 'browserInput'; sessionId: string; lane: number; input: BrowserInput };
 
 export type ServerMessage =
-  | { t: 'hello'; claude: ClaudeInfo; roots: string[]; sessions: SessionInfo[]; commands: SlashCommand[]; folderCommands: Record<string, SlashCommand[]>; models: ModelChoice[]; quota: Quota | null; build: string; crew: CrewMember[]; preferences: Preferences; onboarded: boolean; rootsLocked: boolean; claudeDefaults: ClaudeDefaults; appUpdate: AppUpdate | null; /** by browserId (shared/browser.ts) */ browsers: Record<string, BrowserState>; browserAvailable: boolean; /** none from a server older than the mods */ mods?: ModInfo[] }
+  | { t: 'hello'; claude: ClaudeInfo; roots: string[]; /** the roots under their real paths, where saved projects are kept (absent from an older server) */ realRoots?: string[]; sessions: SessionInfo[]; commands: SlashCommand[]; folderCommands: Record<string, SlashCommand[]>; models: ModelChoice[]; quota: Quota | null; build: string; crew: CrewMember[]; preferences: Preferences; onboarded: boolean; rootsLocked: boolean; claudeDefaults: ClaudeDefaults; appUpdate: AppUpdate | null; /** by browserId (shared/browser.ts) */ browsers: Record<string, BrowserState>; browserAvailable: boolean; /** none from a server older than the mods */ mods?: ModInfo[] }
   /** a session asked for in a folder that runs code of its own and was never trusted: the user decides (SessionOptions.trust) */
   | { t: 'trustNeeded'; cwd: string; code: FolderCode }
   /** the settings changed (from any tab); `roots`: the folders in effect */
-  | { t: 'preferences'; preferences: Preferences; roots: string[]; onboarded: boolean; claudeDefaults: ClaudeDefaults }
+  | { t: 'preferences'; preferences: Preferences; roots: string[]; realRoots?: string[]; onboarded: boolean; claudeDefaults: ClaudeDefaults }
   | { t: 'rootSuggestions'; suggestions: RootSuggestion[] }
   | { t: 'terminals'; choices: TerminalChoice[] }
   | { t: 'crew'; crew: CrewMember[] }

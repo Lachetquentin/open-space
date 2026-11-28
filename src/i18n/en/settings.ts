@@ -142,8 +142,6 @@ export const settings: Dictionary['settings'] = {
         title: 'Projects',
         hint: 'The projects saved from the streamlined launcher. A pinned project keeps its pill in the header, even without a session.',
         empty: 'No saved project: add some from the project name in the streamlined launcher.',
-        unpin: 'Unpin',
-        outsideRoots: 'Outside the allowed folders',
         remove: (folder) => `Remove ${folder} from the projects`,
       },
       launcherStyle: { title: 'Launcher style', hint: 'Where a new session’s request is written: at the foot of the column, or streamlined: a question over the field, its options in chips.', options: { classic: 'Classic', streamlined: 'Streamlined' } },

@@ -144,8 +144,6 @@ export const settings = {
         title: 'Projets',
         hint: 'Les projets enregistrés depuis le lanceur épuré. Un projet épinglé garde sa pastille dans l’en-tête, même sans session.',
         empty: 'Aucun projet enregistré : ajoute-en depuis le nom du projet dans le lanceur épuré.',
-        unpin: 'Désépingler',
-        outsideRoots: 'Hors des dossiers autorisés',
         remove: (folder: string) => `Retirer ${folder} des projets`,
       },
       launcherStyle: { title: 'Style du lanceur', hint: 'Où s’écrit la demande d’une nouvelle session : en bas de la colonne, ou épuré : une question au-dessus du champ, ses options en pastilles.', options: { classic: 'Classique', streamlined: 'Épuré' } },

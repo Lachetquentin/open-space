@@ -124,6 +124,7 @@ function SettingsEditor() {
   const preferences = useSessions((s) => s.preferences);
   const rootsLocked = useSessions((s) => s.rootsLocked);
   const roots = useSessions((s) => s.roots);
+  const realRoots = useSessions((s) => s.realRoots);
   const suggestions = useSessions((s) => s.rootSuggestions);
   const claude = useSessions((s) => s.claude);
   const claudeUpdate = useSessions((s) => s.claudeUpdate);
@@ -420,8 +421,8 @@ function SettingsEditor() {
                   <li key={project.folder}>
                     {project.pinned && <PinIcon />}
                     <span className="cp-onboarding__folder" title={project.folder}>{homeRelative(project.folder)}</span>
-                    {!insideRoots(project.folder, roots) && <span className="cp-muted cp-prefs__outside">{rows.projects.outsideRoots}</span>}
-                    {project.pinned && <button type="button" className="cp-button" data-size="small" onClick={() => editProjects((live) => withPin(live, project.folder, false))}>{rows.projects.unpin}</button>}
+                    {!insideRoots(project.folder, roots, realRoots) && <span className="cp-muted cp-prefs__outside">{t.composer.projectPicker.outsideRoots}</span>}
+                    {project.pinned && <button type="button" className="cp-button" data-size="small" onClick={() => editProjects((live) => withPin(live, project.folder, false))}>{t.composer.projectPicker.unpin}</button>}
                     <button type="button" className="cp-icon-button" data-size="small" aria-label={rows.projects.remove(homeRelative(project.folder))} title={rows.projects.remove(homeRelative(project.folder))} onClick={() => editProjects((live) => withoutProject(live, project.folder))}><CloseIcon /></button>
                   </li>
                 ))}
